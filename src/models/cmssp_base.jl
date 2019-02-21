@@ -19,6 +19,7 @@ Attributes:
 """
 struct CMSSPAction{AD,AC}
     action::Union{AD,AC}
+    action_idx::Int64
 end
 
 
@@ -34,3 +35,10 @@ end
 POMDPs.actions(mdp::CMSSP) = mdp.actions
 POMDPs.n_actions(mdp::CMSSP) = length(mdp.actions)
 POMDPs.discount(mdp::CMSSP) = 1.0 # SSP - Undiscounted
+POMDPs.actionindex(mdp::CMSSP, a::CMSSPAction) = a.action_idx
+
+## User needs to implement
+# POMDPs.isterminal
+# POMDPs.generate_sr # For continuous
+# POMDPs.transition # For discrete
+# POMDPs.reward # For cost - decomposed

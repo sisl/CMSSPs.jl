@@ -20,8 +20,9 @@ using Graphs
 # Parsing and support
 using TOML
 
-
+# Include submodule files
 include("models/CMSSPModel.jl")
+
 
 @reexport using CMSSPs.CMSSPModel
 
