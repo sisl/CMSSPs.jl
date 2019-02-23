@@ -27,8 +27,8 @@ end
 # end
 
 ## Q - DO WE NEED IT AS AN ABSTRACT MDP?
-struct CMSSP{D,S,AD,AS} <: POMDPs.MDP{CMSSPState{D,S}, CMSSPAction{AD,AS}}
-    actions::Vector{CMSSPAction{AD,AS}}
+struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
+    actions::Vector{CMSSPAction{AD,AC}}
 end
 
 # POMDPs overrides
