@@ -24,15 +24,21 @@ using LocalApproximationValueIteration
 using CMSSPs.CMSSPModel
 
 
-# HHPC-level exports
+# Open-loop exports
 export
     GraphTracker,
     open_loop_plan!,
     update_graph_tracker!
 
+
+# Closed-loop exports
+export
+    CMSSPStateAugmented
+
 ## To implement
 # heuristic
 
 include("global_layer.jl")
+include("local_layer.jl")
 
 end
