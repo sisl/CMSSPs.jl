@@ -1,55 +1,184 @@
-function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C}, 
-                        context_set::Vector{Any}, N::Int64,
-                        edge_weight::Function, is_valid_edge::Function) where {D,C,AD,AC}
-
-# Creates graph inside and just returns what is needed
-
-
-
-end
-
 """
-Open loop plan from current state after updating an existing graph. Return a Vector{V} (user doesn't care about indices)
+Data structure used by open-loop layer to update current high-level plan
 """
-function open_loop_replan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C}, 
-                           context_set::Vector{Any}, N::Int64,
-                           edge_weight::Function, is_valid_edge::Function,
-                           graph_tracker::GraphTracker{D,C}) where {D,C,AD,AC}
-
-# Updates graph tracker and returns what is needed
-
-end
-
-
 mutable struct GraphTracker{D,C}
     curr_graph::SimpleVListGraph{OpenLoopVertex{D,C}}
-    mode_switch_map::Dict{Tuple{D,D},Set{Int64}}
+    mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
+    start_idx::Int64
     curr_goal_idx::Int64
-    next_start_idx::Int64
-    has_next_start::Bool
-    curr_soln_path_idxs::Vector{Int64}
+    has_start::Bool
+    curr_soln_path_idxs::Vector{Int}
+    num_samples::Int64
 end
 
-function GraphTracker{D,C}()
-    return GraphTracker(SimpleVListGraph{OpenLoopVertex{D,C}}(),
-                        Dict{Tuple{D,D},Set{Int64}}(),
+function GraphTracker{D,C}(N::Int64) where {D,C}
+    return GraphTracker{D,C}(SimpleVListGraph{OpenLoopVertex{D,C}}(),
+                        Dict{Tuple{D,D},MVector{2,Int64}}(),
                         0,
                         0,
                         false,
-                        Vector{Int64}(undef,0))
+                        Vector{Int64}(undef,0),
+                        N)
+end
+
+"""
+Open loop plan from current state from scratch. Return a graph tracker with solution
+
+IMP
+- edge_weight should return the intra-modal cost when both vertices in same mode
+- is_valid_edge should take the same arguments as edge_weight
+"""
+function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C}, 
+                        context_set::Vector{Any},
+                        edge_weight::Function, is_valid_edge::Function,
+                        heuristic::Function,
+                        graph_tracker::GraphTracker{D,C}) where {D,C,AD,AC}
+
+    # Create start vertex and insert in graph
+    # Don't need explicit goal - visitor will handle
+    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex{D,C}(s_t))
+    graph_tracker.start_idx = num_vertices(graph_tracker.curr_graph)
+    graph_tracker.has_start = true
+    graph_tracker.curr_goal_idx = 0
+
+    # Obtain path and current cost with A*
+    astar_path_soln = astar_light_shortest_path_implicit(graph_tracker.curr_graph, edge_weight,
+                                                         graph_tracker.start_idx,
+                                                         GoalVisitorImplicit{D,C,AD,AC}(graph_tracker, cmssp))
+
+    # If unreachable, report warning
+    if graph_tracker.curr_goal_idx == 0
+        @warn "A goal state is currently unreachable"
+        return
+    end
+
+    # Check that goal state is indeed terminal
+    # And that A* has non-Inf cost path to it
+    @assert astar_path_soln.dists[graph_tracker.curr_goal_idx] < Inf "Path to goal is Inf cost!"
+    @assert is_terminal(cmssp, graph_tracker.vertices[graph_tracker.curr_goal_idx].state) == true "Goal state is not terminal!"
+
+    ## Walk path back to goal
+    # First, clear out current solution
+    empty!(graph_tracker.curr_soln_path_idxs)
+
+    # Then insert goal in soln vector
+    pushfirst!(graph_tracker.curr_soln_path_idxs, graph_tracker.curr_goal_idx)
+    curr_vertex_idx = curr_goal_idx
+
+    while curr_vertex_idx != graph_tracker.start_idx
+        prev_vertex_idx = astar_path_soln.parent_indices[curr_vertex_idx]
+        pushfirst!(graph_tracker.curr_soln_path_idxs, prev_vertex_idx)
+        curr_vertex_idx = prev_vertex_idx
+    end
+
+    # TODO : Do we need to explicitly split out path here? Not yet
+    return graph_tracker
+end
+
+"""
+Open loop plan from current state after updating an existing graph. Return a Vector{V}
+"""
+function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTracker{D,C},
+                               context_set::Vector{Any}) where {D,C,AD,AC}
+    
+    # Run through mode switch ranges and either retain or remove if context has changed too much
+    keys_to_delete = Vector{Tuple{D,D}}(undef,0)
+
+    for (switch,idx_range) in graph_tracker.mode_switch_idx_range
+        # If samples in final mode, skip
+        if switch[1] == switch[2]
+            continue
+        end
+
+        # Copy over subvector of vertices
+        range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
+        valid_update = update_vertices_with_context!(cmssp, range_subvector, context_set)
+
+        # Delete key if not updated
+        if valid_update == false
+            push!(keys_to_delete,switch)
+        end
+    end
+
+    # Iterate over keys_to_delete and delete those that are not updated
+    for ktd in keys_to_delete
+        delete(graph_tracker.mode_switch_idx_range, ktd)
+    end
 end
 
 
-
-struct GoalVisitorImplicit <: AbstractDijkstraVisitor
+struct GoalVisitorImplicit{D,C,AD,AC} <: AbstractDijkstraVisitor
     graph_tracker::GraphTracker
-    next_valid_modes::Function
-    bridge_sample::Function
+    cmssp::CMSSP{D,C,AD,AC}
+    context_set::Vector{Any}
 end
 
 
-function Graphs.include_vertex!(vis::GoalVisitorImplicit, u::V, v::V, d::Float64, nbrs::Vector{Int64}) where {V}
+function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC}, 
+                                u::OpenLoopVertex{D,C}, v::OpenLoopVertex{D,C}, d::Float64, nbrs::Vector{Int64}) where {D,C,AD,AC}
 
-    # Implement expand
+    # If popped vertex is terminal, then stop
+    if is_terminal(v.state) == true
+        return false
+    end
+
+    popped_mode = v.state.mode
+    popped_cont = v.state.continuous
+
+    # If goal mode but NOT goal state, add samples from goal
+    if popped_mode == vis.cmssp.goal_mode
+        # If leftover from previous step, just re-add those
+        if haskey(vis.mode_switch_idx_range,(popped_mode,popped_mode))
+            mode_switch_range = vis.mode_switch_idx_range[(popped_mode,popped_mode)]
+            for nbr_idx = mode_switch_range[1] : mode_switch_range[2]
+                push!(nbrs, nbr_idx)
+            end
+        else
+            # Generate goal sample set
+            goal_samples = generate_goal_sample_set(vis.cmssp, popped_cont, vis.graph_tracker.num_samples)
+            @assert length(goal_samples) > 0
+
+            # Update mode switch map range
+            range_st = num_vertices(vis.graph_tracker.curr_graph)+1
+            range_end = range_st + length(goal_samples)
+            vis.graph_tracker.mode_switch_idx_range[(popped_mode,popped_mode)] = MVector{2,Int64}(range_st, range_end)
+            
+            # Add vertices to graph and to nbrs
+            for (i,gs) in enumerate(goal_samples)
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C}(gs))
+                push!(nbrs,range_st+i-1)
+            end
+        end
+    end
+
+    # Now add for next modes
+    next_valid_modes = generate_next_valid_modes(vis.cmssp, vis.context_set, popped_mode)
+
+    for nvm in next_valid_modes
+        # First check if mode switch has them, then just use those
+        if haskey(vis.mode_switch_idx_range,(popped_mode,nvm))
+            mode_switch_range = vis.mode_switch_idx_range[(popped_mode,nvm)]
+            for nbr_idx = mode_switch_range[1] : mode_switch_range[2]
+                push!(nbrs, nbr_idx)
+            end
+        else
+            # Generate bridge samples
+            bridge_samples = generate_bridge_sample_set(vis.cmssp, vis.context_set, popped_cont, (popped_mode, nvm), vis.graph_tracker.num_samples)
+            @assert length(bridge_samples) > 0
+
+            # Update mode switch map range
+            range_st = num_vertices(vis.graph_tracker.curr_graph)+1
+            range_end = range_st + length(bridge_samples)
+            vis.graph_tracker.mode_switch_idx_range[(popped_mode,nvm)] = MVector{2,Int64}(range_st, range_end)
+
+            # Add vertices to graph and to nbrs
+            for (i,bs) in enumerate(bridge_samples)
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C}(bs))
+                push!(nbrs,range_st+i-1)
+            end
+        end
+    end
+
+    return true
 
 end

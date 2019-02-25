@@ -6,6 +6,9 @@ using Printf
 using Random
 using Statistics
 
+# Non-stdlib essentials
+using StaticArrays
+
 # POMDP Stuff
 using POMDPs
 using POMDPModelTools
@@ -17,8 +20,11 @@ using LocalApproximationValueIteration
 export
     CMSSPState,
     CMSSPAction,
-    CMSSP
-
+    CMSSP,
+    TPDistribution,
+    VKey,
+    BridgeSample,
+    OpenLoopVertex
 
 include("cmssp_base.jl")
 

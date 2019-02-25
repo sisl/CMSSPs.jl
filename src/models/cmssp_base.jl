@@ -29,6 +29,8 @@ end
 ## Q - DO WE NEED IT AS AN ABSTRACT MDP?
 struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
     actions::Vector{CMSSPAction{AD,AC}}
+    start_state::CMSSPState{D,C}
+    goal_mode::D
 end
 
 # POMDPs overrides
@@ -36,6 +38,39 @@ POMDPs.actions(mdp::CMSSP) = mdp.actions
 POMDPs.n_actions(mdp::CMSSP) = length(mdp.actions)
 POMDPs.discount(mdp::CMSSP) = 1.0 # SSP - Undiscounted
 POMDPs.actionindex(mdp::CMSSP, a::CMSSPAction) = a.action_idx
+
+
+const TPDistribution = SparseCat{Vector{Int64},Vector{Float64}}
+const VKey = MVector{2,Float64}
+
+"""
+Return type for bridge sample
+"""
+struct BridgeSample{C}
+    pre_bridge_state::C
+    post_bridge_state::C
+    tp::TPDistribution
+end
+
+
+"""
+Vertex type for open-loop layer
+"""
+mutable struct OpenLoopVertex{D,C}
+    state::CMSSPState{D,C}
+    pre_bridge_state::CMSSPState{D,C}
+    tp::TPDistribution
+end
+
+function OpenLoopVertex(state::CMSSPState{D,C}) where {D,C}
+    return OpenLoopVertex{D,C}(state, state, TPDistribution([-1],[1.0]))
+end
+
+function OpenLoopVertex(pre_mode::D, post_mode::D, bridge_sample::BridgeSample{C}) where {D,C}
+    state = CMSSPState{D,C}(post_mode, bridge_sample.post_bridge_state)
+    pre_bridge_state = CMSSPState{D,C}(pre_mode, bridge_sample.pre_bridge_state)
+    return OpenLoopVertex{D,C}(state, pre_bridge_state, bridge_sample.tp)
+end
 
 ## User needs to implement
 # POMDPs.isterminal
