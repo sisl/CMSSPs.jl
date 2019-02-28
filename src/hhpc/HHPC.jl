@@ -18,6 +18,7 @@ using POMDPModelTools
 using POMDPModels
 using POMDPPolicies
 using POMDPSimulators
+using LocalFunctionApproximation
 using LocalApproximationValueIteration
 
 # CMSSPs submodule
@@ -38,7 +39,10 @@ export
 ## To implement
 # heuristic
 
+## Requirements
+# reward(s,a) - as expected method
+
 include("global_layer.jl")
-include("local_layer.jl")
+# include("local_layer.jl")
 
 end

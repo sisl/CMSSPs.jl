@@ -23,25 +23,64 @@ struct CMSSPAction{AD,AC}
 end
 
 
-# mutable struct CMSSPModalPolicy{D,S,AS} <: Policy
-# end
+# TODO : Require discrete stuff as a Tabular MDP and map from d to integer and ad to integer (actionindex)
 
 ## Q - DO WE NEED IT AS AN ABSTRACT MDP?
-struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
+mutable struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
     actions::Vector{CMSSPAction{AD,AC}}
-    start_state::CMSSPState{D,C}
-    goal_mode::D
+    modes::Vector{D}
+    mode_actions::Vector{AD}
+    modeswitch_mdp::TabularMDP
+    contr_actions::Vector{AC}
+end
+
+function CMSSP{D,C,AD,AC}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D}) where {D,C,AD,AC}
+    empty_mdp = TabularMDP(Array{Float64,3}(undef,0,0,0), Matrix{Float64}(undef,0,0), 1.0)
+    return CMSSP{D,C,AD,AC}(actions, modes, Vector{AD}(undef,0), empty_mdp, Vector{AC}(undef,0))
 end
 
 # POMDPs overrides
-POMDPs.actions(mdp::CMSSP) = mdp.actions
-POMDPs.n_actions(mdp::CMSSP) = length(mdp.actions)
-POMDPs.discount(mdp::CMSSP) = 1.0 # SSP - Undiscounted
-POMDPs.actionindex(mdp::CMSSP, a::CMSSPAction) = a.action_idx
+POMDPs.actions(cmssp::CMSSP) = cmssp.actions
+POMDPs.n_actions(cmssp::CMSSP) = length(cmssp.actions)
+POMDPs.discount(cmssp::CMSSP) = 1.0 # SSP - Undiscounted
+POMDPs.actionindex(cmssp::CMSSP, a::CMSSPAction) = a.action_idx
 
 
 const TPDistribution = SparseCat{Vector{Int64},Vector{Float64}}
 const VKey = MVector{2,Float64}
+
+"""
+Returns a vector of the mode-switch CMSSP actions
+"""
+function get_modeswitch_actions!(cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
+    mode_actions = Vector{AD}(undef,0)
+    for a in ordered_actions(cmssp)
+        if typeof(a.action) <: AD
+            push!(mode_actions,a.action)
+        end
+    end
+    cmssp.mode_actions = mode_actions
+    return mode_actions
+end
+
+"""
+Returns a vector of only the control actions
+"""
+function get_control_actions!(cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
+    contr_actions = Vector{AC}(undef,0)
+    for a in ordered_actions(cmssp)
+        if typeof(a.action) <: AC
+            push!(contr_actions,a.action)
+        end
+    end
+    cmssp.contr_actions = contr_actions
+    return contr_actions
+end
+
+function set_modeswitch_mdp!(cmssp::CMSSP, mdp::TabularMDP)
+    cmssp.modeswitch_mdp = mdp
+end
+
 
 """
 Return type for bridge sample

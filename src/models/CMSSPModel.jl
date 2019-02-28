@@ -21,6 +21,8 @@ export
     CMSSPState,
     CMSSPAction,
     CMSSP,
+    get_modeswitch_actions!,
+    get_control_actions!,
     TPDistribution,
     VKey,
     BridgeSample,
