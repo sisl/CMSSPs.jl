@@ -34,7 +34,7 @@ function load_localapproxvi_policy_from_jld2(policy_fn::String, rng_type::Type{R
                                                   policy_n_gen_samples, rng_type(policy_seed))
 end
 
-function load_modal_policy_localapprox(inhor_policy_fn::String, outhor_policy_fn::String,
+function load_modal_horizon_policy_localapprox(inhor_policy_fn::String, outhor_policy_fn::String,
                                        rng_type::Type{RNG} = MersenneTwister) where {RNG <: AbstractRNG}
 
     inhor_policy = load_localapproxvi_policy_from_jld2(inhor_policy_fn, rng_type)
@@ -42,10 +42,10 @@ function load_modal_policy_localapprox(inhor_policy_fn::String, outhor_policy_fn
 
     @assert inhor_policy.action_map == outhor_policy.action_map "Action Maps for in and out horizon must match!"
 
-    return ModalPolicy(inhor_policy, outhor_policy)
+    return ModalHorizonPolicy(inhor_policy, outhor_policy)
 end
 
-function save_modal_policy_localapprox(modal_policy::ModalPolicy, inhor_policy_fn::String, outhor_policy_fn::String,
+function save_modal_horizon_policy_localapprox(modal_policy::ModalHorizonPolicy, inhor_policy_fn::String, outhor_policy_fn::String,
                                        mdp::MDP)
     save_localapproxvi_policy_to_jld2(inhor_policy_fn, modal_policy.in_horizon_policy, mdp)
     save_localapproxvi_policy_to_jld2(outhor_policy_fn, modal_policy.out_horizon_policy, mdp)

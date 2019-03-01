@@ -36,7 +36,13 @@ export
 export
     CMSSPStateAugmented
 
-## To implement
+
+## Required to implement
+# generate_next_valid_modes
+# generate_bridge_sample_set
+# generate_goal_sample_set
+# update_vertices_with_context
+# mode switches as tabular MDP
 # heuristic
 
 ## Requirements

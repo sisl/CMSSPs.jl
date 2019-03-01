@@ -31,12 +31,14 @@ mutable struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC
     modes::Vector{D}
     mode_actions::Vector{AD}
     modeswitch_mdp::TabularMDP
-    contr_actions::Vector{AC}
+    control_actions::Vector{AC}
 end
 
-function CMSSP{D,C,AD,AC}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D}) where {D,C,AD,AC}
-    empty_mdp = TabularMDP(Array{Float64,3}(undef,0,0,0), Matrix{Float64}(undef,0,0), 1.0)
-    return CMSSP{D,C,AD,AC}(actions, modes, Vector{AD}(undef,0), empty_mdp, Vector{AC}(undef,0))
+function CMSSP{D,C,AD,AC}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D},
+                          switch_mdp=TabularMDP(Array{Float64,3}(undef,0,0,0), Matrix{Float64}(undef,0,0), 1.0)) where {D,C,AD,AC}
+    return CMSSP{D,C,AD,AC}(actions, modes, 
+                            get_modeswitch_actions(actions), switch_mdp, 
+                            get_control_actions(actions))
 end
 
 # POMDPs overrides
@@ -52,33 +54,36 @@ const VKey = MVector{2,Float64}
 """
 Returns a vector of the mode-switch CMSSP actions
 """
-function get_modeswitch_actions!(cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
+function get_modeswitch_actions(actions::Vector{CMSSPAction{AD,AC}}) where {AD,AC}
     mode_actions = Vector{AD}(undef,0)
-    for a in ordered_actions(cmssp)
+    for a in actions
         if typeof(a.action) <: AD
             push!(mode_actions,a.action)
         end
     end
-    cmssp.mode_actions = mode_actions
     return mode_actions
 end
 
 """
 Returns a vector of only the control actions
 """
-function get_control_actions!(cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
-    contr_actions = Vector{AC}(undef,0)
-    for a in ordered_actions(cmssp)
+function get_control_actions(actions::Vector{CMSSPAction{AD,AC}}) where {AD,AC}
+    control_actions = Vector{AC}(undef,0)
+    for a in actions
         if typeof(a.action) <: AC
-            push!(contr_actions,a.action)
+            push!(control_actions,a.action)
         end
     end
-    cmssp.contr_actions = contr_actions
-    return contr_actions
+    return control_actions
 end
 
 function set_modeswitch_mdp!(cmssp::CMSSP, mdp::TabularMDP)
     cmssp.modeswitch_mdp = mdp
+end
+
+function mode_index(cmssp::CMSSP{D,C,AD,AC}, mode::D) where {D,C,AD,AC}
+    idx = findfirst(isequal(mode), cmssp.modes)
+    @assert idx != Nothing "Mode not present in set of modes"
 end
 
 
