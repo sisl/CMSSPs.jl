@@ -6,6 +6,9 @@ end
 const TestStateType = CMSSPState{MODE,TestContState}
 
 @enum MODESWITCH STAY=1 SWITCH=2
+function zero(::Type{MODESWITCH})
+    return 0
+end
 const TestActionType = CMSSPAction{MODESWITCH, Float64}
 
 const TestCMSSPType = CMSSP{MODE,TestContState,MODESWITCH,Float64}

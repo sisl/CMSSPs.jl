@@ -37,6 +37,18 @@ struct ModalAction{AC}
     action_idx::Int64
 end
 
+"""
+CMSSP State augmented with horizon value. Needed for LocalApproximationVI
+"""
+struct ModalStateAugmented{C}
+    state::ModalState{C}
+    horizon::Int64
+end
+
+function ModalStateAugmented{C}(state::ModalState{C}) where {C}
+    return ModalStateAugmented{C}(state, 0)
+end
+
 
 """
 Define modal MDP type which will be used with approximate VI
@@ -77,19 +89,6 @@ POMDPs.actions(mdp::ModalMDP) = mdp.actions
 POMDPs.n_actions(mdp::ModalMDP) = length(mdp.actions)
 POMDPs.discount(mdp::ModalMDP) = 1.0 # SSP - Undiscounted
 POMDPs.actionindex(mdp::ModalMDP, a::ModalAction) = a.action_idx
-
-
-"""
-CMSSP State augmented with horizon value. Needed for LocalApproximationVI
-"""
-struct ModalStateAugmented{C}
-    state::ModalState{C}
-    horizon::Int64
-end
-
-function ModalStateAugmented{C}(state::ModalState{C}) where {C}
-    return ModalStateAugmented{C}(state, 0)
-end
 
 
 """
@@ -141,7 +140,7 @@ end
 
 
 """
-Compute the terminal cost penalty for the modal region. (\phi_CF) from paper
+Compute the terminal cost penalty for the modal region. (phi_CF) from paper
 This version uses a local function approximator
 """
 function compute_terminalcost_localapprox!(mdp::ModalMDP{C,AC}, cmssp::CMSSP{D,C,AD,AC}, mode::D,
@@ -183,7 +182,7 @@ Remember - cannot set values of terminal states - must incorporate in reward fun
 """
 function finite_horizon_VI_localapprox!(mdp::ModalMDP{C,AC}, lfa::LFA,
                                        is_mdp_generative::Bool, n_generative_samples::Int64=0,
-                                       rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+                                       rng::RNG=Random.GLOBAL_RNG) where {C,AC,RNG <: AbstractRNG,LFA<:LocalFunctionApproximator}
 
     # IMP - For out-of-horizon, can just run for that many iterations and it should be fine
     # Setup an out-horizon-approximator with just 1 dimension

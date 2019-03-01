@@ -17,12 +17,16 @@ using POMDPPolicies
 using POMDPSimulators
 using LocalApproximationValueIteration
 
+
+# Requirements
+# zero(AD)
+
 export
     CMSSPState,
     CMSSPAction,
     CMSSP,
-    get_modeswitch_actions!,
-    get_control_actions!,
+    get_modeswitch_actions,
+    get_control_actions,
     TPDistribution,
     VKey,
     BridgeSample,

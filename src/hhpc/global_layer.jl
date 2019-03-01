@@ -1,8 +1,8 @@
 """
 Data structure used by open-loop layer to update current high-level plan
 """
-mutable struct GraphTracker{D,C}
-    curr_graph::SimpleVListGraph{OpenLoopVertex{D,C}}
+mutable struct GraphTracker{D,C,AD}
+    curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD}}
     mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
     start_idx::Int64
     curr_goal_idx::Int64
@@ -11,8 +11,8 @@ mutable struct GraphTracker{D,C}
     num_samples::Int64
 end
 
-function GraphTracker{D,C}(N::Int64) where {D,C}
-    return GraphTracker{D,C}(SimpleVListGraph{OpenLoopVertex{D,C}}(),
+function GraphTracker{D,C,AD}(N::Int64) where {D,C,AD}
+    return GraphTracker{D,C}(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
                         Dict{Tuple{D,D},MVector{2,Int64}}(),
                         0,
                         0,
@@ -26,17 +26,16 @@ Open loop plan from current state from scratch. Return a graph tracker with solu
 
 IMP
 - edge_weight should return the intra-modal cost when both vertices in same mode
-- is_valid_edge should take the same arguments as edge_weight
 """
 function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C}, 
                         context_set::Vector{Any},
-                        edge_weight::Function, is_valid_edge::Function,
+                        edge_weight::Function,
                         heuristic::Function,
                         graph_tracker::GraphTracker{D,C}) where {D,C,AD,AC}
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
-    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex{D,C}(s_t))
+    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(s_t))
     graph_tracker.start_idx = num_vertices(graph_tracker.curr_graph)
     graph_tracker.has_start = true
     graph_tracker.curr_goal_idx = 0
@@ -70,9 +69,6 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
         pushfirst!(graph_tracker.curr_soln_path_idxs, prev_vertex_idx)
         curr_vertex_idx = prev_vertex_idx
     end
-
-    # TODO : Do we need to explicitly split out path here? Not yet
-    return graph_tracker
 end
 
 """
@@ -115,7 +111,7 @@ end
 
 
 function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC}, 
-                                u::OpenLoopVertex{D,C}, v::OpenLoopVertex{D,C}, d::Float64, nbrs::Vector{Int64}) where {D,C,AD,AC}
+                                u::OpenLoopVertex{D,C,AD}, v::OpenLoopVertex{D,C,AD}, d::Float64, nbrs::Vector{Int64}) where {D,C,AD,AC}
 
     # If popped vertex is terminal, then stop
     if is_terminal(v.state) == true
@@ -145,7 +141,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
             
             # Add vertices to graph and to nbrs
             for (i,gs) in enumerate(goal_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C}(gs))
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(gs))
                 push!(nbrs,range_st+i-1)
             end
         end
@@ -154,7 +150,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
     # Now add for next modes
     next_valid_modes = generate_next_valid_modes(vis.cmssp, vis.context_set, popped_mode)
 
-    for nvm in next_valid_modes
+    for (action,nvm) in next_valid_modes
         # First check if mode switch has them, then just use those
         if haskey(vis.mode_switch_idx_range,(popped_mode,nvm))
             mode_switch_range = vis.mode_switch_idx_range[(popped_mode,nvm)]
@@ -173,7 +169,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
 
             # Add vertices to graph and to nbrs
             for (i,bs) in enumerate(bridge_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C}(bs))
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(bs))
                 push!(nbrs,range_st+i-1)
             end
         end

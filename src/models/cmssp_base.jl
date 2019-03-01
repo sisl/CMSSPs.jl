@@ -36,9 +36,9 @@ end
 
 function CMSSP{D,C,AD,AC}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D},
                           switch_mdp=TabularMDP(Array{Float64,3}(undef,0,0,0), Matrix{Float64}(undef,0,0), 1.0)) where {D,C,AD,AC}
-    return CMSSP{D,C,AD,AC}(actions, modes, 
-                            get_modeswitch_actions(actions), switch_mdp, 
-                            get_control_actions(actions))
+    return CMSSP{D,C,AD,AC}(actions, modes,  
+                 get_modeswitch_actions(actions), switch_mdp, 
+                 get_control_actions(actions))
 end
 
 # POMDPs overrides
@@ -84,8 +84,14 @@ end
 function mode_index(cmssp::CMSSP{D,C,AD,AC}, mode::D) where {D,C,AD,AC}
     idx = findfirst(isequal(mode), cmssp.modes)
     @assert idx != Nothing "Mode not present in set of modes"
+    return idx
 end
 
+function mode_actionindex(cmssp::CMSSP{D,C,AD,AC}, mode_action::AD) where {D,C,AD,AC}
+    idx = findfirst(isequal(mode_action), cmssp.mode_actions)
+    @assert idx != Nothing "Mode-switch action not present"
+    return idx
+end
 
 """
 Return type for bridge sample
@@ -100,20 +106,21 @@ end
 """
 Vertex type for open-loop layer
 """
-mutable struct OpenLoopVertex{D,C}
+mutable struct OpenLoopVertex{D,C,AD}
     state::CMSSPState{D,C}
     pre_bridge_state::CMSSPState{D,C}
+    bridging_action::AD
     tp::TPDistribution
 end
 
-function OpenLoopVertex(state::CMSSPState{D,C}) where {D,C}
-    return OpenLoopVertex{D,C}(state, state, TPDistribution([-1],[1.0]))
+function OpenLoopVertex{D,C,AD}(state::CMSSPState{D,C}, action::AD) where {D,C,AD}
+    return OpenLoopVertex{D,C,AD}(state, state, action, TPDistribution([-1],[1.0]))
 end
 
-function OpenLoopVertex(pre_mode::D, post_mode::D, bridge_sample::BridgeSample{C}) where {D,C}
-    state = CMSSPState{D,C}(post_mode, bridge_sample.post_bridge_state)
-    pre_bridge_state = CMSSPState{D,C}(pre_mode, bridge_sample.pre_bridge_state)
-    return OpenLoopVertex{D,C}(state, pre_bridge_state, bridge_sample.tp)
+function OpenLoopVertex{D,C,AD}(pre_mode::D, post_mode::D, bridge_sample::BridgeSample{C}, action::AD) where {D,C,AD}
+    state = CMSSPState(post_mode, bridge_sample.post_bridge_state)
+    pre_bridge_state = CMSSPState(pre_mode, bridge_sample.pre_bridge_state)
+    return OpenLoopVertex{D,C,AD}(state, pre_bridge_state, action, bridge_sample.tp)
 end
 
 ## User needs to implement
