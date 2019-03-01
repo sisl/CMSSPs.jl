@@ -70,7 +70,7 @@ function simulate(cmssp::CMSSP{D,C,AD,AC}, solver::HHPCSolver{D,C,AD,AC},
             plan = false
         end
 
-        # now do work for macro-actions
+        # now do work for macro-actions 
 
 
 
