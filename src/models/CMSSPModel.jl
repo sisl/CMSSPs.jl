@@ -27,8 +27,9 @@ export
     CMSSP,
     get_modeswitch_actions,
     get_control_actions,
+    set_modeswitch_mdp!,
+    mode_index,
     TPDistribution,
-    VKey,
     BridgeSample,
     OpenLoopVertex
 

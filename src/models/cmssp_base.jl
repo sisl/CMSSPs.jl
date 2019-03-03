@@ -32,13 +32,16 @@ mutable struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC
     mode_actions::Vector{AD}
     modeswitch_mdp::TabularMDP
     control_actions::Vector{AC}
+    goal_state::CMSSPState{D,C}
 end
 
 function CMSSP{D,C,AD,AC}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D},
+                          goal_state::CMSSPState{D,C},
                           switch_mdp=TabularMDP(Array{Float64,3}(undef,0,0,0), Matrix{Float64}(undef,0,0), 1.0)) where {D,C,AD,AC}
     return CMSSP{D,C,AD,AC}(actions, modes,  
                  get_modeswitch_actions(actions), switch_mdp, 
-                 get_control_actions(actions))
+                 get_control_actions(actions),
+                 goal_state)
 end
 
 # POMDPs overrides
@@ -49,7 +52,6 @@ POMDPs.actionindex(cmssp::CMSSP, a::CMSSPAction) = a.action_idx
 
 
 const TPDistribution = SparseCat{Vector{Int64},Vector{Float64}}
-const VKey = MVector{2,Float64}
 
 """
 Returns a vector of the mode-switch CMSSP actions
@@ -77,10 +79,17 @@ function get_control_actions(actions::Vector{CMSSPAction{AD,AC}}) where {AD,AC}
     return control_actions
 end
 
+
+"""
+Setter method for the tabular MDP for mode switches
+"""
 function set_modeswitch_mdp!(cmssp::CMSSP, mdp::TabularMDP)
     cmssp.modeswitch_mdp = mdp
 end
 
+"""
+Returns the integer index of the argument mode from the modes member of the cmssp.
+"""
 function mode_index(cmssp::CMSSP{D,C,AD,AC}, mode::D) where {D,C,AD,AC}
     idx = findfirst(isequal(mode), cmssp.modes)
     @assert idx != Nothing "Mode not present in set of modes"
@@ -94,7 +103,7 @@ function mode_actionindex(cmssp::CMSSP{D,C,AD,AC}, mode_action::AD) where {D,C,A
 end
 
 """
-Return type for bridge sample
+Return type for bridge sample. tp refers to the GLOBAL future time distribution for context
 """
 struct BridgeSample{C}
     pre_bridge_state::C
@@ -114,7 +123,7 @@ mutable struct OpenLoopVertex{D,C,AD}
 end
 
 function OpenLoopVertex{D,C,AD}(state::CMSSPState{D,C}, action::AD) where {D,C,AD}
-    return OpenLoopVertex{D,C,AD}(state, state, action, TPDistribution([-1],[1.0]))
+    return OpenLoopVertex{D,C,AD}(state, state, action, TPDistribution([0],[1.0]))
 end
 
 function OpenLoopVertex{D,C,AD}(pre_mode::D, post_mode::D, bridge_sample::BridgeSample{C}, action::AD) where {D,C,AD}
@@ -123,8 +132,9 @@ function OpenLoopVertex{D,C,AD}(pre_mode::D, post_mode::D, bridge_sample::Bridge
     return OpenLoopVertex{D,C,AD}(state, pre_bridge_state, action, bridge_sample.tp)
 end
 
+
 ## User needs to implement
 # POMDPs.isterminal
 # POMDPs.generate_sr # For continuous
-# POMDPs.transition # For discrete
 # POMDPs.reward # For cost - decomposed
+# 

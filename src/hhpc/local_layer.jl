@@ -248,14 +248,19 @@ end
 
 
 # Incorporate interrupt logic here
-function horizon_weighted_value(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, 
+function horizon_weighted_value(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
                                 tp_dist::TPDistribution, curr_state::C, target_state::C) where {C,AC}
 
     weighted_value = 0.0
     weighted_minvalue = 0.0
 
-    # Iterate over horizon values and weight 
-    for (h,p) in tp_dist
+    # Iterate over horizon values and weight
+    # Subtract the current time-step to get the true relative time
+    for (h_,p) in tp_dist
+        h = h_ - curr_timestep
+        if h <= 0
+            continue
+        end
         if h > mdp.horizon_limit
             temp_state = ModalStateAugmented(ModalState(curr_state,target_state), mdp.horizon_limit+1)
             weighted_value += p*POMDPs.value(modal_policy.out_horizon_policy,temp_state)
@@ -274,13 +279,17 @@ function horizon_weighted_value(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonP
 end
 
 
-function horizon_weighted_actionvalue(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, 
+function horizon_weighted_actionvalue(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
                                 tp_dist::TPDistribution, curr_state::C, target_state::C, a::ModalAction{AC}) where {C,AC}
 
     total_value = 0.0
 
     # Iterate over horizon values and weight 
-    for (h,p) in tp_dist
+    for (h_,p) in tp_dist
+        h = h_ - curr_timestep
+        if h <= 0
+            continue
+        end
         if h > mdp.horizon_limit
             temp_state = ModalStateAugmented(ModalState(curr_state,target_state), mdp.horizon_limit+1)
             total_value += p*POMDPs.action_value(modal_policy.out_horizon_policy, temp_state, a)
@@ -297,11 +306,12 @@ end
 """
 Returns action with lowest average cost (i.e. highest average value, since value is negative cost)
 """
-function get_best_intramodal_action(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy,
+function get_best_intramodal_action(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
                                tp_dist::TPDistribution, curr_state::C, target_state::C) where {C,AC}
 
     # First check if abort needed
-    (weighted_value, weighted_minvalue) = horizon_weighted_value(mdp,modal_policy,tp_dist,curr_state,target_state)
+    (weighted_value, weighted_minvalue) = horizon_weighted_value(mdp,modal_policy,curr_timestep,
+                                                                 tp_dist,curr_state,target_state)
 
     if weighted_value < mdp.beta_threshold * weighted_minvalue
         return Nothing # closed-loop interrupt
@@ -312,7 +322,7 @@ function get_best_intramodal_action(mdp::ModalMDP{C,AC}, modal_policy::ModalHori
     best_action_val = -Inf
 
     for a in mdp.actions
-        action_val = horizon_weighted_actionvalue(mdp, modal_policy, tp_dist, curr_state, target_state, a)
+        action_val = horizon_weighted_actionvalue(mdp, modal_policy, curr_timestep, tp_dist, curr_state, target_state, a)
         if action_val > best_action_val
             best_action_val = action
             best_action = a

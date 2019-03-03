@@ -114,7 +114,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
                                 u::OpenLoopVertex{D,C,AD}, v::OpenLoopVertex{D,C,AD}, d::Float64, nbrs::Vector{Int64}) where {D,C,AD,AC}
 
     # If popped vertex is terminal, then stop
-    if is_terminal(v.state) == true
+    if is_terminal(vis.cmssp, v.state) == true
         return false
     end
 
@@ -140,8 +140,9 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
             vis.graph_tracker.mode_switch_idx_range[(popped_mode,popped_mode)] = MVector{2,Int64}(range_st, range_end)
             
             # Add vertices to graph and to nbrs
+            # IMP - Add a default mode-switch action
             for (i,gs) in enumerate(goal_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(gs))
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(gs, vis.cmssp.mode_actions[1]))
                 push!(nbrs,range_st+i-1)
             end
         end
@@ -169,7 +170,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
 
             # Add vertices to graph and to nbrs
             for (i,bs) in enumerate(bridge_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(bs))
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(popped_mode,nvm,bs,action))
                 push!(nbrs,range_st+i-1)
             end
         end
