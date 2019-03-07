@@ -63,7 +63,8 @@ end
     AC = controlactiontype(cmssp)
 
     @req isterminal(::P, ::S)
-    
+    @req generate_sr(::ModalMDP{D,C,AC}, ::ModalState{C,C}, ::RNG where {RNG <: AbstractRNG})
+     
 
 end
 
