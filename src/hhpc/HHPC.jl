@@ -40,7 +40,6 @@ export
 # Closed-loop exports
 export
     ModalHorizonPolicy,
-    ModalState,
     ModalAction,
     ModalStateAugmented,
     ModalMDP,

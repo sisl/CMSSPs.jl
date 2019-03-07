@@ -63,8 +63,15 @@ end
     AC = controlactiontype(cmssp)
 
     @req isterminal(::P, ::S)
-    @req generate_sr(::ModalMDP{D,C,AC}, ::ModalState{C,C}, ::RNG where {RNG <: AbstractRNG})
-     
+    @req generate_sr(::ModalMDP{D,C,AC}, ::C, ::RNG where {RNG <: AbstractRNG}) # OR transition + reward?
+
+
+    # Global layer requirements
+    # @req update_vertices_with_context!(::P, range_subvector, context_set)
+    
+
+    # Local layer requirements
+    @req get_relative_state(::ModalMDP{D,C,AC}, ::C, ::C)
 
 end
 
@@ -139,7 +146,7 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
             break
         end
 
-        if curr_action == Nothing || failed_mode_switch || t - last_plan_time > solver.replan_time_threshold
+        if curr_action == nothing || failed_mode_switch || t - last_plan_time > solver.replan_time_threshold
             plan = true
         end
     end

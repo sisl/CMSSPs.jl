@@ -61,10 +61,10 @@ POMDPs.n_actions(cmssp::CMSSP) = length(cmssp.actions)
 POMDPs.discount(cmssp::CMSSP) = 1.0 # SSP - Undiscounted
 POMDPs.actionindex(cmssp::CMSSP, a::CMSSPAction) = a.action_idx
 
-modetype(::CMSSP{D,C,AD,AC}) = D
-continuoustype(::CMSSP{D,C,AD,AC}) = C
-modeactiontype(::CMSSP{D,C,AD,AC}) = AD
-controlactiontype(::CMSSP{D,C,AD,AC}) = AC
+modetype(::CMSSP{D,C,AD,AC}) where {D,C,AD,AC} = D
+continuoustype(::CMSSP{D,C,AD,AC}) where {D,C,AD,AC} = C
+modeactiontype(::CMSSP{D,C,AD,AC}) where {D,C,AD,AC} = AD
+controlactiontype(::CMSSP{D,C,AD,AC}) where {D,C,AD,AC} = AC
 
 
 const TPDistribution = SparseCat{Vector{Int64},Vector{Float64}}
@@ -102,7 +102,7 @@ This is typically required to refer into the mode-switching MDP
 """
 function mode_index(cmssp::CMSSP{D,C,AD,AC}, mode::D) where {D,C,AD,AC}
     idx = findfirst(isequal(mode), cmssp.modes)
-    @assert idx != Nothing "Mode not present in set of modes"
+    @assert idx != nothing "Mode not present in set of modes"
     return idx
 end
 
@@ -111,7 +111,7 @@ Return the integer index of the mode-switching action relaty
 """
 function mode_actionindex(cmssp::CMSSP{D,C,AD,AC}, mode_action::AD) where {D,C,AD,AC}
     idx = findfirst(isequal(mode_action), cmssp.mode_actions)
-    @assert idx != Nothing "Mode-switch action not present"
+    @assert idx != nothing "Mode-switch action not present"
     return idx
 end
 
