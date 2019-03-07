@@ -1,3 +1,16 @@
+"""
+The overall HHPC framework solver object.
+
+Attributes:
+    - `graph_tracker::GraphTracker{D,C,AD}`
+    - `modal_policies::Dict{D,ModalHorizonPolicy}` A map from the mode to the modal policies (in and out-horizon)
+    - `modal_mdps::Dict{D,ModalMDP{D,C,AC}}` A map from the mode to the regional MDP
+    - `replan_time_threshold::Int64` The Delta T parameter for periodic replanning (discrete time-steps)
+    - `heuristic::Function` The heuristic method for the global layer
+    - `max_steps::Int64` The maximum length of a problem episode (may not be applicable)
+    - `start_state::CMSSPState{C,AC}`
+    - `goal_modes::Vector{D}`
+"""
 mutable struct HHPCSolver{D,C,AD,AC} <: Solver
     graph_tracker::GraphTracker{D,C,AD}
     modal_policies::Dict{D,ModalHorizonPolicy}
@@ -5,6 +18,8 @@ mutable struct HHPCSolver{D,C,AD,AC} <: Solver
     replan_time_threshold::Int64
     heuristic::Function
     max_steps::Int64
+    start_state::CMSSPState{C,AC}
+    goal_modes::Vector{D}
 end
 
 function HHPCSolver{D,C,AD,AC}(N::Int64,modal_policies::Dict{D,ModalHorizonPolicy},
@@ -14,10 +29,19 @@ function HHPCSolver{D,C,AD,AC}(N::Int64,modal_policies::Dict{D,ModalHorizonPolic
                                  modal_policies, modal_mdps, deltaT, heuristic, max_steps)
 end
 
+"""
+Creates the weight function for the edges, used by the global layer graph search.
+
+Arguments:
+    - `solver::HHPCSolver{D,C,AD,AC}` The HHPC solver instance
+    - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
+    - `u::OpenLoopVertex{D,C,AD}` The parent vertex
+    - `v::OpenLoopVertex{D,C,AD}` The child vertex
+"""
 function edge_weight_fn(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC},
                         u::OpenLoopVertex{D,C,AD}, v::OpenLoopVertex{D,C,AD}) where {D,C,AD,AC}
 
-    # We care about u's state to v's pre-state
+    # u's state to v's pre-state should be in a single region
     @assert u.state.mode == v.pre_bridge_state.mode
 
     # We care about relative tp_dist between u and v
@@ -33,14 +57,15 @@ function edge_weight_fn(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC},
                                             u.state.continuous,
                                             v.pre_bridge_state.continuous)
 
-    # TODO : Change this?
+    # TODO : Verify that this works
+    # Filter out edges that nominally would trigger an interrupt
     if weighted_value < mdp.beta_threshold*weighted_minvalue
         return Inf
     end
 
     edge_weight = -1.0*weighted_value
 
-    # If change in mode for final - do that
+    # Also add the cost due to the assumed mode switch
     if v.pre_bridge_state.mode != v.state.mode
         ac_idx = mode_actionindex(v.bridging_action)
         mode_idx = mode_index(v.pre_bridge_state.mode)
@@ -67,17 +92,26 @@ end
 
 
     # Global layer requirements
-    # @req update_vertices_with_context!(::P, range_subvector, context_set)
+    @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}}, ::Vector{Any})
+    @req generate_goal_sample_set(::P, ::C, ::Int64)
+    @req generate_next_valid_modes(::P, ::Vector{Any}, ::D)
+    @req generate_bridge_sample_set(::P, ::Vector{Any}, ::C, ::Tuple{D,D}, ::Int64)
     
 
     # Local layer requirements
     @req get_relative_state(::ModalMDP{D,C,AC}, ::C, ::C)
 
+    # HHPC requirements
+    @req contextset(::P, ::Int64)
+    @req simulate(::P, ::S, ::A, ::Int64)
+
 end
 
 
 
-
+"""
+Executes the top-level behavior of HHPC. Utilizes both global and local layer logic, and interleaving.
+"""
 function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
 
     @warn_requirements solve(solver,cmssp)
@@ -92,9 +126,7 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
 
     # Generate initial state and context
     # This will typically be a bound method
-    (start_state, start_context) = initial_state(cmssp)
-    curr_state = start_state
-    curr_context = start_context
+    curr_state = hhpc.start_state
 
     # Diagnostic info
     total_cost = 0.0
@@ -102,9 +134,12 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
 
     while t <= solver.max_steps
 
+        # Get current context
+        curr_context = contextset(cmssp, t)
+
         if plan == true
             open_loop_plan!(cmssp, curr_state, curr_context, edge_weight_fn,
-                            solver.heuristic, hhpc.graph_tracker)
+                            solver.heuristic, hhpc.goal_modes, hhpc.graph_tracker)
             last_plan_time = t
             plan = false
         end
@@ -114,9 +149,9 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
 
         # Check if 'terminal' state as per modal MDP
         @assert curr_state.mode == next_target.pre_bridge_state.mode
-        modal_relstate = ModalState{C}(curr_state.continuous, next_target.pre_bridge_state.continuous)
+        relative_state = get_relative_state(curr_state.continuous, next_target.pre_bridge_state.continuous)
 
-        if POMDPs.isterminal(solver.modal_mdps[curr_state.mode], modal_relstate)
+        if POMDPs.isterminal(solver.modal_mdps[curr_state.mode], relative_state)
             # TODO: Guaranteed to not be truly terminal state
             # Action is just the bridging action
             curr_action = next_target.bridging_action
@@ -132,13 +167,12 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
         # If curr_action = NOTHING, means interrupt
         # So simulator should handle NOTHING
         # Will typically be bound to other environment variables
-        (new_state, new_context, reward, failed_mode_switch) = simulate(cmssp,curr_state,curr_action)
+        (new_state, reward, failed_mode_switch) = simulate(cmssp, curr_state, curr_action, t)
         t = t+1
         total_cost += -1.0*reward
 
-        # Copy over things
+        # Update current state
         curr_state = new_state
-        curr_context = new_context
 
         # Check terminal conditions
         if POMDPs.isterminal(cmssp, curr_state)

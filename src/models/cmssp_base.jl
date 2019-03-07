@@ -35,7 +35,6 @@ Attributes:
     - `modeswitch_mdp::TabularMDP` The tabular MDP that represents the mode-switching dynamics. The integer indices for
     the modes and actions follow the ordering in modes::Vector{D} and mode_actions::Vector{AD} respectively
     - `control_actions::Vector{AC}` The set of control actions in the same relative order as the full action set
-    - `goal_modes::Vector{D}` The set of possible goal modes for the problem (may usually be 1)
 """
 mutable struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
     actions::Vector{CMSSPAction{AD,AC}}
@@ -43,16 +42,13 @@ mutable struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC
     mode_actions::Vector{AD}
     modeswitch_mdp::TabularMDP
     control_actions::Vector{AC}
-    goal_modes::Vector{D}
 end
 
 function CMSSP{D,C,AD,AC}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D},
-                          goal_modes::Vector{D},
                           switch_mdp::TabularMDP) where {D,C,AD,AC}
     return CMSSP{D,C,AD,AC}(actions, modes,  
                  get_modeswitch_actions(actions), switch_mdp, 
-                 get_control_actions(actions),
-                 goal_modes)
+                 get_control_actions(actions))
 end
 
 # POMDPs overrides

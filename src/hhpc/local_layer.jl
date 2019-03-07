@@ -76,7 +76,7 @@ function POMDPs.convert_s(::Type{V}, s::ModalStateAugmented{C},
 end
 
 """
-Convert horizon-augmented vector to ModalState Augmented
+Convert horizon-augmented vector to ModalStateAugmented
 """
 function POMDPs.convert_s(::Type{ModalStateAugmented}, v::AbstractVector{Float64},
                           mdp::ModalMDP{D,C,AC}) where {D,C,AC}

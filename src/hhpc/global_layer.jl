@@ -36,6 +36,7 @@ Arguments:
     - `s_t::CMSSPState{D,C}` The current state
     - `edge_weight::Function` A generic edge weight function (handed down by hhpc solver)
     - `heuristic::Function` A generic heuristic function (handed down by hhpc solver)
+    - `goal_modes::Vector{D}` A set of modes that are goal conditions
     - `graph_tracker::GraphTracker{D,C}` The instance of the object that maintains the current open-loop graph
 
 Returns:
@@ -45,6 +46,7 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
                         context_set::Vector{Any},
                         edge_weight::Function,
                         heuristic::Function,
+                        goal_modes::Vector{D},
                         graph_tracker::GraphTracker{D,C}) where {D,C,AD,AC}
 
     # Create start vertex and insert in graph
@@ -59,7 +61,7 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
     # Obtain path and current cost with A*
     astar_path_soln = astar_light_shortest_path_implicit(graph_tracker.curr_graph, edge_weight,
                                                          graph_tracker.curr_start_idx,
-                                                         GoalVisitorImplicit{D,C,AD,AC}(graph_tracker, cmssp))
+                                                         GoalVisitorImplicit{D,C,AD,AC}(graph_tracker, cmssp, context_set, goal_modes))
 
     # If unreachable, report warning
     if graph_tracker.curr_goal_idx == 0
@@ -87,7 +89,7 @@ end
 """
 Update the current open-loop graph tracker with the new context set.
 
-Attributes:
+Arguments:
     - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
     - `graph_tracker::GraphTracker{D,C}` The graph_tracker instance to update in place
     - `context_set::Vector{Any}` The current and estimated future context
@@ -128,6 +130,7 @@ struct GoalVisitorImplicit{D,C,AD,AC} <: AbstractDijkstraVisitor
     graph_tracker::GraphTracker
     cmssp::CMSSP{D,C,AD,AC}
     context_set::Vector{Any}
+    goal_modes::Vector{D}
 end
 
 
@@ -144,7 +147,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
     popped_cont = v.state.continuous
 
     # If goal mode but NOT goal state, add samples from goal
-    if popped_mode in vis.cmssp.goal_modes
+    if popped_mode in vis.goal_modes
         # If leftover from previous step, just re-add those
         if haskey(vis.mode_switch_idx_range,(popped_mode,popped_mode))
             mode_switch_range = vis.mode_switch_idx_range[(popped_mode,popped_mode)]

@@ -26,11 +26,6 @@ using CMSSPs.CMSSPModel
 
 
 # Open-loop exports
-# Requirements:
-# update_vertices_with_context!(cmssp, range_subvector, context_set)
-# generate_goal_sample_set(vis.cmssp, popped_cont, vis.graph_tracker.num_samples)
-# generate_next_valid_modes(vis.cmssp, vis.context_set, popped_mode)
-# generate_bridge_sample_set(vis.cmssp, vis.context_set, popped_cont, (popped_mode, nvm), vis.graph_tracker.num_samples)
 export
     GraphTracker,
     open_loop_plan!,
@@ -65,10 +60,6 @@ export
     load_modal_horizon_policy_localapprox,
     save_modal_horizon_policy_localapprox
 
-
-
-## Requirements
-# reward(s,a) - as expected method
 
 include("global_layer.jl")
 include("local_layer.jl")
