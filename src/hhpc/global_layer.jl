@@ -1,12 +1,20 @@
 """
-Data structure used by open-loop layer to update current high-level plan
+Data structure used by open-loop layer to update current high-level plan.
+
+Attributes:
+    - `curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD}}` A list of vertices generated so far by the bridge sampler
+    - `mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}` The range for the subvector of vertices generated for a particular mode switch.
+    Is updated in place by update_graph_tracker!
+    - `curr_start_idx::Int64` The vertex index of the current start vertex in the graph, from which planning will happen. Updated each time open_loop_plan is called
+    - `curr_goal_idx::Int64` The vertex index of current goal vertex. Updated each time a goal state vertex is popped.
+    - `curr_soln_path_idxs::Vector{Int64}` The in-order list of indices from current start to current goal
+    - `num_samples::Int64` The N parameter for the number of bridge samples to generate per mode switch
 """
 mutable struct GraphTracker{D,C,AD}
     curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD}}
     mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
-    start_idx::Int64
+    curr_start_idx::Int64
     curr_goal_idx::Int64
-    has_start::Bool
     curr_soln_path_idxs::Vector{Int}
     num_samples::Int64
 end
@@ -16,7 +24,6 @@ function GraphTracker{D,C,AD}(N::Int64) where {D,C,AD}
                         Dict{Tuple{D,D},MVector{2,Int64}}(),
                         0,
                         0,
-                        false,
                         Vector{Int64}(undef,0),
                         N)
 end
@@ -24,8 +31,15 @@ end
 """
 Open loop plan from current state from scratch. Return a graph tracker with solution
 
-IMP
-- edge_weight should return the intra-modal cost when both vertices in same mode
+Arguments:
+    - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
+    - `s_t::CMSSPState{D,C}` The current state
+    - `edge_weight::Function` A generic edge weight function (handed down by hhpc solver)
+    - `heuristic::Function` A generic heuristic function (handed down by hhpc solver)
+    - `graph_tracker::GraphTracker{D,C}` The instance of the object that maintains the current open-loop graph
+
+Returns:
+    Updates the `graph_tracker` object in place.
 """
 function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C}, 
                         context_set::Vector{Any},
@@ -36,13 +50,15 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
     add_vertex!(graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(s_t))
-    graph_tracker.start_idx = num_vertices(graph_tracker.curr_graph)
-    graph_tracker.has_start = true
+    graph_tracker.curr_start_idx = num_vertices(graph_tracker.curr_graph)
     graph_tracker.curr_goal_idx = 0
+
+    # Clear out current solution
+    empty!(graph_tracker.curr_soln_path_idxs)
 
     # Obtain path and current cost with A*
     astar_path_soln = astar_light_shortest_path_implicit(graph_tracker.curr_graph, edge_weight,
-                                                         graph_tracker.start_idx,
+                                                         graph_tracker.curr_start_idx,
                                                          GoalVisitorImplicit{D,C,AD,AC}(graph_tracker, cmssp))
 
     # If unreachable, report warning
@@ -57,14 +73,11 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
     @assert is_terminal(cmssp, graph_tracker.vertices[graph_tracker.curr_goal_idx].state) == true "Goal state is not terminal!"
 
     ## Walk path back to goal
-    # First, clear out current solution
-    empty!(graph_tracker.curr_soln_path_idxs)
-
-    # Then insert goal in soln vector
+    # Insert goal in soln vector
     pushfirst!(graph_tracker.curr_soln_path_idxs, graph_tracker.curr_goal_idx)
     curr_vertex_idx = curr_goal_idx
 
-    while curr_vertex_idx != graph_tracker.start_idx
+    while curr_vertex_idx != graph_tracker.curr_start_idx
         prev_vertex_idx = astar_path_soln.parent_indices[curr_vertex_idx]
         pushfirst!(graph_tracker.curr_soln_path_idxs, prev_vertex_idx)
         curr_vertex_idx = prev_vertex_idx
@@ -72,7 +85,12 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
 end
 
 """
-Open loop plan from current state after updating an existing graph. Return a Vector{V}
+Update the current open-loop graph tracker with the new context set.
+
+Attributes:
+    - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
+    - `graph_tracker::GraphTracker{D,C}` The graph_tracker instance to update in place
+    - `context_set::Vector{Any}` The current and estimated future context
 """
 function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTracker{D,C},
                                context_set::Vector{Any}) where {D,C,AD,AC}
@@ -103,6 +121,9 @@ function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTrac
 end
 
 
+"""
+The visitor object for the implicit A* search. Attributes obvious.
+"""
 struct GoalVisitorImplicit{D,C,AD,AC} <: AbstractDijkstraVisitor
     graph_tracker::GraphTracker
     cmssp::CMSSP{D,C,AD,AC}
@@ -115,6 +136,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
 
     # If popped vertex is terminal, then stop
     if is_terminal(vis.cmssp, v.state) == true
+        vis.graph_tracker.curr_goal_idx = vertex_index(vis.graph_tracker.curr_graph, v)
         return false
     end
 
@@ -122,7 +144,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
     popped_cont = v.state.continuous
 
     # If goal mode but NOT goal state, add samples from goal
-    if popped_mode == vis.cmssp.goal_mode
+    if popped_mode in vis.cmssp.goal_modes
         # If leftover from previous step, just re-add those
         if haskey(vis.mode_switch_idx_range,(popped_mode,popped_mode))
             mode_switch_range = vis.mode_switch_idx_range[(popped_mode,popped_mode)]

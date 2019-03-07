@@ -25,23 +25,34 @@ end
 
 # TODO : Require discrete stuff as a Tabular MDP and map from d to integer and ad to integer (actionindex)
 
-## Q - DO WE NEED IT AS AN ABSTRACT MDP?
+"""
+Contains the information to represent and track the CMSSP problem.
+
+Attributes:
+    - `actions::Vector{CMSSPAction{AD,AC}}` The set of actions that the agent can take, both mode switching and control
+    - `modes::Vector{D}` The set of discrete modes of the problem
+    - `mode_actions::Vector{AD}` The set of mode-switching actions in the same relative order as the full action set
+    - `modeswitch_mdp::TabularMDP` The tabular MDP that represents the mode-switching dynamics. The integer indices for
+    the modes and actions follow the ordering in modes::Vector{D} and mode_actions::Vector{AD} respectively
+    - `control_actions::Vector{AC}` The set of control actions in the same relative order as the full action set
+    - `goal_modes::Vector{D}` The set of possible goal modes for the problem (may usually be 1)
+"""
 mutable struct CMSSP{D,C,AD,AC} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
     actions::Vector{CMSSPAction{AD,AC}}
     modes::Vector{D}
     mode_actions::Vector{AD}
     modeswitch_mdp::TabularMDP
     control_actions::Vector{AC}
-    goal_state::CMSSPState{D,C}
+    goal_modes::Vector{D}
 end
 
 function CMSSP{D,C,AD,AC}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D},
-                          goal_state::CMSSPState{D,C},
-                          switch_mdp=TabularMDP(Array{Float64,3}(undef,0,0,0), Matrix{Float64}(undef,0,0), 1.0)) where {D,C,AD,AC}
+                          goal_modes::Vector{D},
+                          switch_mdp::TabularMDP) where {D,C,AD,AC}
     return CMSSP{D,C,AD,AC}(actions, modes,  
                  get_modeswitch_actions(actions), switch_mdp, 
                  get_control_actions(actions),
-                 goal_state)
+                 goal_modes)
 end
 
 # POMDPs overrides
@@ -49,6 +60,11 @@ POMDPs.actions(cmssp::CMSSP) = cmssp.actions
 POMDPs.n_actions(cmssp::CMSSP) = length(cmssp.actions)
 POMDPs.discount(cmssp::CMSSP) = 1.0 # SSP - Undiscounted
 POMDPs.actionindex(cmssp::CMSSP, a::CMSSPAction) = a.action_idx
+
+modetype(::CMSSP{D,C,AD,AC}) = D
+continuoustype(::CMSSP{D,C,AD,AC}) = C
+modeactiontype(::CMSSP{D,C,AD,AC}) = AD
+controlactiontype(::CMSSP{D,C,AD,AC}) = AC
 
 
 const TPDistribution = SparseCat{Vector{Int64},Vector{Float64}}
@@ -81,14 +97,8 @@ end
 
 
 """
-Setter method for the tabular MDP for mode switches
-"""
-function set_modeswitch_mdp!(cmssp::CMSSP, mdp::TabularMDP)
-    cmssp.modeswitch_mdp = mdp
-end
-
-"""
 Returns the integer index of the argument mode from the modes member of the cmssp.
+This is typically required to refer into the mode-switching MDP
 """
 function mode_index(cmssp::CMSSP{D,C,AD,AC}, mode::D) where {D,C,AD,AC}
     idx = findfirst(isequal(mode), cmssp.modes)
@@ -96,6 +106,9 @@ function mode_index(cmssp::CMSSP{D,C,AD,AC}, mode::D) where {D,C,AD,AC}
     return idx
 end
 
+"""
+Return the integer index of the mode-switching action relaty
+"""
 function mode_actionindex(cmssp::CMSSP{D,C,AD,AC}, mode_action::AD) where {D,C,AD,AC}
     idx = findfirst(isequal(mode_action), cmssp.mode_actions)
     @assert idx != Nothing "Mode-switch action not present"
@@ -103,7 +116,12 @@ function mode_actionindex(cmssp::CMSSP{D,C,AD,AC}, mode_action::AD) where {D,C,A
 end
 
 """
-Return type for bridge sample. tp refers to the GLOBAL future time distribution for context
+Return type for bridge sample points.
+
+Attributes:
+    - `pre_bridge_state::C` The continuous state sample prior to the transition (represents pre-conditions)
+    - `post_bridge_state::C` The continuous state sample after the transition (represents post-conditions)
+    - `tp::TPDistribution` The distribution over time horizons for the bridge sample to be reached
 """
 struct BridgeSample{C}
     pre_bridge_state::C
@@ -113,7 +131,13 @@ end
 
 
 """
-Vertex type for open-loop layer
+Vertex type for open-loop layer.
+
+Attributes:
+    -`state::CMSSPState{D,C}` The actual state encoded by the vertex (typically after a bridge transition)
+    - `pre_bridge_state::CMSSPState{D,C}` The state before the bridge transition
+    - `bridging_action::AD` The chosen mode-switching action by the bridge sampler
+    - `tp::TPDistribution` The distribution over time horizons for the bridge sample to be reached
 """
 mutable struct OpenLoopVertex{D,C,AD}
     state::CMSSPState{D,C}
@@ -131,10 +155,3 @@ function OpenLoopVertex{D,C,AD}(pre_mode::D, post_mode::D, bridge_sample::Bridge
     pre_bridge_state = CMSSPState(pre_mode, bridge_sample.pre_bridge_state)
     return OpenLoopVertex{D,C,AD}(state, pre_bridge_state, action, bridge_sample.tp)
 end
-
-
-## User needs to implement
-# POMDPs.isterminal
-# POMDPs.generate_sr # For continuous
-# POMDPs.reward # For cost - decomposed
-# 

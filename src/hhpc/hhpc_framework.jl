@@ -1,14 +1,14 @@
 mutable struct HHPCSolver{D,C,AD,AC} <: Solver
     graph_tracker::GraphTracker{D,C,AD}
-    modal_policies::Dict{D,ModalPolicy}
-    modal_mdps::Dict{D,ModalMDP{C,AC}}
+    modal_policies::Dict{D,ModalHorizonPolicy}
+    modal_mdps::Dict{D,ModalMDP{D,C,AC}}
     replan_time_threshold::Int64
     heuristic::Function
     max_steps::Int64
 end
 
-function HHPCSolver{D,C,AD,AC}(N::Int64,modal_policies::Dict{D,ModalPolicy},
-                               modal_mdps::Dict{D,ModalMDP{C,AC}}, deltaT::Int64,
+function HHPCSolver{D,C,AD,AC}(N::Int64,modal_policies::Dict{D,ModalHorizonPolicy},
+                               modal_mdps::Dict{D,ModalMDP{D,C,AC}}, deltaT::Int64,
                                heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC}
     return HHPCSolver{D,C,AD,AC}(GraphTracker{D,C,AD}(N),
                                  modal_policies, modal_mdps, deltaT, heuristic, max_steps)
@@ -52,13 +52,27 @@ end
 
 
 # TODO : Fill this in
-@POMDP_require solve(solver::HHPCSolver, mdp::CMSSP) begin
+@POMDP_require solve(solver::HHPCSolver, cmssp::CMSSP) begin
+
+    P = typeof(cmssp)
+    S = statetype(P)
+    A = actiontype(P)
+    D = modetype(cmssp)
+    C = continuoustype(cmssp)
+    AD = modeactiontype(cmssp)
+    AC = controlactiontype(cmssp)
+
+    @req isterminal(::P, ::S)
+    
+
+end
 
 
 
-function solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
 
-    @warn_requirements solve(solver,mdp)
+function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
+
+    @warn_requirements solve(solver,cmssp)
 
     # Initialize Global flags
     t = 0

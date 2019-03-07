@@ -27,10 +27,10 @@ end
 For a modal policy, the state is a pair of the current and target.
 Expects a convert_s function (specify requirements in @POMDP_require)
 """
-struct ModalState{C}
-    curr_state::C
-    target_state::C
-end
+# struct ModalState{C}
+#     relative_state::C
+# end
+# JUST DO RELATIVE STATE
 
 struct ModalAction{AC}
     action::AC
@@ -41,11 +41,11 @@ end
 CMSSP State augmented with horizon value. Needed for LocalApproximationVI
 """
 struct ModalStateAugmented{C}
-    state::ModalState{C}
+    relative_state::C
     horizon::Int64
 end
 
-function ModalStateAugmented{C}(state::ModalState{C}) where {C}
+function ModalStateAugmented{C}(state::C) where {C}
     return ModalStateAugmented{C}(state, 0)
 end
 
@@ -54,7 +54,8 @@ end
 Define modal MDP type which will be used with approximate VI
 (Take horizon as a function argument)
 """
-mutable struct ModalMDP{C,AC} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction{AC}}
+mutable struct ModalMDP{D,C,AC} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction{AC}}
+    mode::D
     actions::Vector{ModalAction{AC}}
     beta_threshold::Float64
     horizon_limit::Int64
@@ -63,23 +64,12 @@ mutable struct ModalMDP{C,AC} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction{A
     terminal_costs_set::Bool
 end
 
-function ModalMDP{C,AC}(actions::Vector{ModalAction{AC}}, beta::Float64=1.0, horizon_limit::Int64=0) where {C,AC}
-    return ModalMDP{C,AC}(actions, beta, horizon_limit, Inf, Vector{Float64}(undef,0), Inf, false)
+function ModalMDP{D,C,AC}(mode::D, actions::Vector{ModalAction{AC}}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AC}
+    return ModalMDP{D,C,AC}(mode, actions, beta, horizon_limit, Vector{Float64}(undef,0), Inf, false)
 end
 
-function ModalMDP{C,AC}(cmssp::CMSSP{D,C,AD,AC}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AD,AC}
 
-    actions = Vector{ModalAction{AC}}(undef,0)
-
-    # Generate control_actions with new indices
-    for (i,control_act) in enumerate(cmssp.control_actions)
-        push!(actions, ModalAction{AC}(control_act, i))
-    end
-
-    return ModalMDP{C,AC}(actions, beta, horizon_limit)
-end
-
-function set_horizon_limit!(mdp::ModalMDP{C,AC}, h::Int64) where {C,AC}
+function set_horizon_limit!(mdp::ModalMDP{D,C,AC}, h::Int64) where {C,AC}
     mdp.horizon_limit = h
     mdp.min_value_per_horizon = Vector{Float64}(-Inf,h)
 end
@@ -96,8 +86,8 @@ Convert augmented state to a vector by calling the underlying convert_s function
 for non-augmented state
 """
 function POMDPs.convert_s(::Type{V}, s::ModalStateAugmented{C}, 
-                          mdp::ModalMDP{C,AC}) where {C,AC,V <: AbstractVector{Float64}}
-    v = convert_s(Vector{Float64}, s.state, mdp)
+                          mdp::ModalMDP{D,C,AC}) where {C,AC,V <: AbstractVector{Float64}}
+    v = convert_s(Vector{Float64}, s.relative_state, mdp)
     push!(v, convert(Float64, s.horizon))
     return v
 end
@@ -106,15 +96,15 @@ end
 Convert horizon-augmented vector to CMSSPStateAugmented
 """
 function POMDPs.convert_s(::Type{ModalStateAugmented}, v::AbstractVector{Float64},
-                          mdp::ModalMDP{C,AC}) where {C,AC}
-    state = convert_s(ModalState, v, mdp)
+                          mdp::ModalMDP{D,C,AC}) where {C,AC}
+    state = convert_s(C, v, mdp)
     horizon = convert(Int64,v[end])
     s = ModalStateAugmented{C}(state,horizon)
     return s
 end
 
 
-function POMDPs.generate_sr(mdp::ModalMDP{C,AC}, s::ModalStateAugmented{C}, a::ModalAction{AC}, 
+function POMDPs.generate_sr(mdp::ModalMDP{D,C,AC}, s::ModalStateAugmented{C}, a::ModalAction{AC}, 
                             rng::RNG=Random.GLOBAL_RNG) where {C,AC,RNG <: AbstractRNG}
 
     # Get next state and underlying cost for dynamics
@@ -134,7 +124,7 @@ function POMDPs.generate_sr(mdp::ModalMDP{C,AC}, s::ModalStateAugmented{C}, a::M
     return ModalStateAugmented(sp, s.horizon-1), -cost
 end
 
-function POMDPs.isterminal(mdp::ModalMDP{C,AC}, s::ModalStateAugmented{C}) where {C,AC}
+function POMDPs.isterminal(mdp::ModalMDP{D,C,AC}, s::ModalStateAugmented{C}) where {C,AC}
     return s.horizon == 0
 end
 
@@ -143,7 +133,7 @@ end
 Compute the terminal cost penalty for the modal region. (phi_CF) from paper
 This version uses a local function approximator
 """
-function compute_terminalcost_localapprox!(mdp::ModalMDP{C,AC}, cmssp::CMSSP{D,C,AD,AC}, mode::D,
+function compute_terminalcost_localapprox!(mdp::ModalMDP{D,C,AC}, cmssp::CMSSP{D,C,AD,AC}, mode::D,
                                           lfa::LFA) where {D,C,AD,AC,LFA <: LocalFunctionApproximator}
     max_contr_cost = Inf
     max_switch_cost = Inf
@@ -180,7 +170,7 @@ end
 """
 Remember - cannot set values of terminal states - must incorporate in reward function!
 """
-function finite_horizon_VI_localapprox!(mdp::ModalMDP{C,AC}, lfa::LFA,
+function finite_horizon_VI_localapprox!(mdp::ModalMDP{D,C,AC}, lfa::LFA,
                                        is_mdp_generative::Bool, n_generative_samples::Int64=0,
                                        rng::RNG=Random.GLOBAL_RNG) where {C,AC,RNG <: AbstractRNG,LFA<:LocalFunctionApproximator}
 
@@ -225,7 +215,7 @@ function finite_horizon_VI_localapprox!(mdp::ModalMDP{C,AC}, lfa::LFA,
 end
 
 
-function compute_min_value_per_horizon_localapprox!(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy) where {C,AC}
+function compute_min_value_per_horizon_localapprox!(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy) where {C,AC}
 
     # Access the underlying value function approximator
     all_interp_values_inhor = get_all_interpolating_values(modal_policy.in_horizon_policy.interp)
@@ -248,7 +238,7 @@ end
 
 
 # Incorporate interrupt logic here
-function horizon_weighted_value(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
+function horizon_weighted_value(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
                                 tp_dist::TPDistribution, curr_state::C, target_state::C) where {C,AC}
 
     weighted_value = 0.0
@@ -279,7 +269,7 @@ function horizon_weighted_value(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonP
 end
 
 
-function horizon_weighted_actionvalue(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
+function horizon_weighted_actionvalue(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
                                 tp_dist::TPDistribution, curr_state::C, target_state::C, a::ModalAction{AC}) where {C,AC}
 
     total_value = 0.0
@@ -306,7 +296,7 @@ end
 """
 Returns action with lowest average cost (i.e. highest average value, since value is negative cost)
 """
-function get_best_intramodal_action(mdp::ModalMDP{C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
+function get_best_intramodal_action(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
                                tp_dist::TPDistribution, curr_state::C, target_state::C) where {C,AC}
 
     # First check if abort needed
