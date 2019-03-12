@@ -11,22 +11,23 @@ Attributes:
     - `start_state::CMSSPState{C,AC}`
     - `goal_modes::Vector{D}`
 """
-mutable struct HHPCSolver{D,C,AD,AC} <: Solver
+mutable struct HHPCSolver{D,C,AD,AC,RNG <: AbstractRNG} <: Solver
     graph_tracker::GraphTracker{D,C,AD}
     modal_policies::Dict{D,ModalHorizonPolicy}
     modal_mdps::Dict{D,ModalMDP{D,C,AC}}
     replan_time_threshold::Int64
     heuristic::Function
     max_steps::Int64
-    start_state::CMSSPState{C,AC}
     goal_modes::Vector{D}
+    rng::RNG
 end
 
 function HHPCSolver{D,C,AD,AC}(N::Int64,modal_policies::Dict{D,ModalHorizonPolicy},
                                modal_mdps::Dict{D,ModalMDP{D,C,AC}}, deltaT::Int64,
-                               heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC}
+                               heuristic::Function = n->0, max_steps::Int64=1000, goal_modes::Vector{D},
+                               rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,AC, RNG <: AbstractRNG}
     return HHPCSolver{D,C,AD,AC}(GraphTracker{D,C,AD}(N),
-                                 modal_policies, modal_mdps, deltaT, heuristic, max_steps)
+                                 modal_policies, modal_mdps, deltaT, heuristic, max_steps, goal_modes, rng)
 end
 
 """
@@ -88,21 +89,21 @@ end
     AC = controlactiontype(cmssp)
 
     @req isterminal(::P, ::S)
-    @req generate_sr(::ModalMDP{D,C,AC}, ::C, ::RNG where {RNG <: AbstractRNG}) # OR transition + reward?
-
+    @req generate_sr(::ModalMDP{D,C,AC} where {D,C,AC}, ::C, ::RNG where {RNG <: AbstractRNG}) # OR transition + reward?
+    @req isterminal(::ModalMDP{D,C,AC} where {D,C,AC}, ::C)
 
     # Global layer requirements
-    @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}}, ::Vector{Any})
+    @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}} where {D,C,AD})
     @req generate_goal_sample_set(::P, ::C, ::Int64)
-    @req generate_next_valid_modes(::P, ::Vector{Any}, ::D)
-    @req generate_bridge_sample_set(::P, ::Vector{Any}, ::C, ::Tuple{D,D}, ::Int64)
+    @req generate_next_valid_modes(::P, ::D)
+    @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D} where {D}, ::Int64)
     
 
     # Local layer requirements
     @req get_relative_state(::ModalMDP{D,C,AC}, ::C, ::C)
 
     # HHPC requirements
-    @req contextset(::P, ::Int64)
+    @req startstate_context(::P, ::RNG where {RNG <: AbstractRNG})
     @req simulate(::P, ::S, ::A, ::Int64)
 
 end
@@ -126,16 +127,13 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
 
     # Generate initial state and context
     # This will typically be a bound method
-    curr_state = hhpc.start_state
+    curr_state, curr_context = startstate_context(cmssp, solver.rng)
 
     # Diagnostic info
     total_cost = 0.0
     successful = false
 
     while t <= solver.max_steps
-
-        # Get current context
-        curr_context = contextset(cmssp, t)
 
         if plan == true
             open_loop_plan!(cmssp, curr_state, curr_context, edge_weight_fn,
@@ -167,12 +165,13 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
         # If curr_action = NOTHING, means interrupt
         # So simulator should handle NOTHING
         # Will typically be bound to other environment variables
-        (new_state, reward, failed_mode_switch) = simulate(cmssp, curr_state, curr_action, t)
+        (new_state, new_context, reward, failed_mode_switch) = simulate(cmssp, curr_state, curr_action, t)
         t = t+1
         total_cost += -1.0*reward
 
         # Update current state
         curr_state = new_state
+        curr_context = new_context
 
         # Check terminal conditions
         if POMDPs.isterminal(cmssp, curr_state)

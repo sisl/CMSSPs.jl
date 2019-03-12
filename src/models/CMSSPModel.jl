@@ -5,6 +5,7 @@ using Logging
 using Printf
 using Random
 using Statistics
+using LinearAlgebra
 
 # Non-stdlib essentials
 using StaticArrays
