@@ -45,7 +45,6 @@ Returns:
     Updates the `graph_tracker` object in place.
 """
 function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C}, 
-                        context_set::Vector{Any},
                         edge_weight::Function,
                         heuristic::Function,
                         goal_modes::Vector{D},
@@ -63,7 +62,7 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
     # Obtain path and current cost with A*
     astar_path_soln = astar_light_shortest_path_implicit(graph_tracker.curr_graph, edge_weight,
                                                          graph_tracker.curr_start_idx,
-                                                         GoalVisitorImplicit{D,C,AD,AC}(graph_tracker, cmssp, context_set, goal_modes))
+                                                         GoalVisitorImplicit{D,C,AD,AC}(graph_tracker, cmssp, goal_modes))
 
     # If unreachable, report warning
     if graph_tracker.curr_goal_idx == 0
@@ -94,10 +93,8 @@ Update the current open-loop graph tracker with the new context set.
 Arguments:
     - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
     - `graph_tracker::GraphTracker{D,C}` The graph_tracker instance to update in place
-    - `context_set::Vector{Any}` The current and estimated future context
 """
-function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTracker{D,C},
-                               context_set::Vector{Any}) where {D,C,AD,AC}
+function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTracker{D,C}) where {D,C,AD,AC}
     
     # Run through mode switch ranges and either retain or remove if context has changed too much
     keys_to_delete = Vector{Tuple{D,D}}(undef,0)
@@ -110,7 +107,7 @@ function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTrac
 
         # Copy over subvector of vertices
         range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
-        valid_update = update_vertices_with_context!(cmssp, range_subvector, context_set)
+        valid_update = update_vertices_with_context!(cmssp, range_subvector, switch)
 
         # Delete key if not updated
         if valid_update == false
@@ -131,7 +128,6 @@ The visitor object for the implicit A* search. Attributes obvious.
 struct GoalVisitorImplicit{D,C,AD,AC} <: AbstractDijkstraVisitor
     graph_tracker::GraphTracker
     cmssp::CMSSP{D,C,AD,AC}
-    context_set::Vector{Any}
     goal_modes::Vector{D}
 end
 
@@ -176,7 +172,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
     end
 
     # Now add for next modes
-    next_valid_modes = generate_next_valid_modes(vis.cmssp, vis.context_set, popped_mode)
+    next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode)
 
     for (action,nvm) in next_valid_modes
         # First check if mode switch has them, then just use those
@@ -187,7 +183,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
             end
         else
             # Generate bridge samples
-            bridge_samples = generate_bridge_sample_set(vis.cmssp, vis.context_set, popped_cont, 
+            bridge_samples = generate_bridge_sample_set(vis.cmssp, popped_cont, 
                                                         (popped_mode, nvm), vis.graph_tracker.num_samples, vis.graph_tracker.rng)
             @assert length(bridge_samples) > 0
 

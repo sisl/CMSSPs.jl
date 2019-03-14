@@ -24,7 +24,7 @@ const Toy2DCMSSPType = CMSSP{Int64,Toy2DStateType,Int64,Toy2DContAction}
 const Toy2DModalMDPType = ModalMDP{Int64,Toy2DContState,Toy2DContAction}
 const Toy2DOpenLoopVertex = OpenLoopVertex{Int64,Toy2DStateType,Int64}
 # Context is current collection of all valid transition points at each timestep
-const Toy2DModePair = Tuple{Int64}
+const Toy2DModePair = Tuple{Int64, Int64}
 const Toy2DContextType = Vector{Tuple{Toy2DModePair,Toy2DContState}}
 
 # Const values
@@ -148,10 +148,120 @@ end
 # of the transition point. If it is, set that to be the horizon
 # Otherwise, set vertex to t = 0 with probability 1.0
 function update_vertices_with_context!(cmssp::Toy2DCMSSPType, vertices::Vector{Toy2DOpenLoopVertex},
-                                       context_set::Vector{Toy2DContextType})
+                                       switch::Toy2DModePair, context_set::Vector{Toy2DContextType}, params::Toy2DParameters)
 
     # Note that this is for a specific mode, so only consider those with the same mode switch
     # Iterate over context set
     # If the mode switch tuple is the same as in the open-loop vertex
     # Then check that the pre_bridge_state is in the range of the first
     # The post bridge state is just the same as from where the mode switch is attempted
+    @assert (vertices[1].pre_bridge_state.mode, vertices[1].state.mode) == switch "Switch argument does not match OpenLoop Vertices"
+
+    # IMP - Only look at future context, so start with index 2
+    context_hor = length(context_set)
+
+    # TODO : Search more efficiently by starting from current v.tp???
+    for v in vertices
+
+        tp_time = 0
+
+        for (hor,context) in enumerate(context_set[2:end])
+
+            for switch_points in context
+                if switch_points[1] != switch
+                    continue
+                end
+                pt_dist = norm(v.pre_bridge_state, switch_points[2])
+                if pt_dist < params.epsilon
+                    tp_time = hor
+                    break
+                end
+            end
+
+            if tp_time > 0
+                break
+            end
+        end
+
+        # Will either be [hor,1.0] or [0,1.0]
+        v.tp = TPDistribution([tp_time],[1.0])
+    end
+end
+
+
+# Just generate points around centre within +- box
+function generate_goal_sample_set(cmssp::Toy2DCMSSPType, popped_cont::Toy2DContState,
+                                  num_samples::Int64, rng::RNG, params::Toy2DParameters) where {RNG <: AbstractRNG}
+
+    goal_samples = Vector{Toy2DStateType}(undef,0)
+
+    dx = Uniform(GOAL_CENTRE.x - params.epsilon/2.0, GOAL_CENTRE.x + params.epsilon/2.0)
+    dy = Uniform(GOAL_CENTRE.y - params.epsilon/2.0, GOAL_CENTRE.y + params.epsilon/2.0)
+
+    for i = 1:num_samples
+        push!(goal_samples, Toy2DStateType(GOAL_MODE, Toy2DContState(rand(dx,rng), rand(dy,rng))))
+    end
+
+    return goal_samples
+end
+
+
+function generate_next_valid_modes(cmssp::Toy2DCMSSPType, mode::Int64, context_set::Vector{Toy2DContextType})
+
+    action_nextmodes = Vector{Tuple{Int64,Int64}}(undef,0)
+    next_modes = Set{Int64}()
+
+    for context in context_set[2:end]
+
+        for switch_points in context
+            if switch_points[1][1] == mode
+                next_mode = switch_points[1][2]
+
+                if next_mode in next_modes == false
+                    mode_idx = mode_index(cmssp, mode)
+                    next_mode_idx = mode_index(cmssp, next_mode)
+                    
+                    # Need to find action to take to next mode
+                    for (ac_idx,action) in cmssp.mode_actions
+                        if cmssp.modeswitch_mdp.T[mode_idx,ac_idx,next_mode_idx] > 0.0
+                            push!(action_nextmodes,(ac_idx,next_mode_idx))
+                            push!(next_modes, next_mode)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return action_nextmodes
+end
+
+function generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2DContState, 
+                                    mode_pair::Toy2DModePair, num_samples::Int64,
+                                    rng::RNG, context_set::Vector{Toy2DContextType} params::Toy2DParameters) where {RNG <: AbstractRNG}
+
+    bridge_samples = Vector{BridgeSample{Toy2DContState}}(undef,0)
+
+    avg_samples_per_context = convert(Int64,round(num_samples/length(context_set)))
+
+    for (hor,context) in enumerate(context_set[2:end])
+
+        for switch_points in context
+
+            if switch_points[1] == mode_pair
+                # Generate bridge points around switch
+                dx = Uniform(switch_points[2].x - params.epsilon/2.0, switch_points[2].x + params.epsilon/2.0)
+                dy = Uniform(switch_points[2].y - params.epsilon/2.0, switch_points[2].y + params.epsilon/2.0)
+
+                for _ = 1:avg_samples_per_context
+                    bpx = rand(dx, rng)
+                    bpy = rand(dy, rng)
+                    state = Toy2DContState(bpx,bpy)
+                    push!(bridge_samples, BridgeSample{Toy2DContState}(state, state, TPDistribution([hor],[1.0])))
+                end
+            end
+        end
+    end
+
+    return bridge_samples
+end

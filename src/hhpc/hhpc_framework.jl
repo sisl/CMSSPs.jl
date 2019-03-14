@@ -93,7 +93,7 @@ end
     @req isterminal(::ModalMDP{D,C,AC} where {D,C,AC}, ::C)
 
     # Global layer requirements
-    @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}} where {D,C,AD})
+    @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}} where {D,C,AD}, ::Tuple{D,D} where D)
     @req generate_goal_sample_set(::P, ::C, ::Int64, ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D)
     @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D} where {D}, ::Int64, ::RNG where {RNG <: AbstractRNG})
@@ -101,6 +101,8 @@ end
 
     # Local layer requirements
     @req get_relative_state(::ModalMDP{D,C,AC}, ::C, ::C)
+    @req convert_s(::Type{V} where V <: AbstractVector{Float64},::C,::ModalMDP{D,C,AC} where {D,C,AC})
+    @req convert_s(::Type{C},::V where V <: AbstractVector{Float64},::ModalMDP{D,C,AC} where {D,C,AC})
 
     # HHPC requirements
     @req startstate_context(::P, ::RNG where {RNG <: AbstractRNG})
