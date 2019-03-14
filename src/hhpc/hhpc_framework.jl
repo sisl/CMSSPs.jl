@@ -60,7 +60,7 @@ function edge_weight_fn(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC},
 
     # TODO : Verify that this works
     # Filter out edges that nominally would trigger an interrupt
-    if weighted_value < mdp.beta_threshold*weighted_minvalue
+    if weighted_value <= mdp.beta_threshold*weighted_minvalue
         return Inf
     end
 
@@ -89,14 +89,14 @@ end
     AC = controlactiontype(cmssp)
 
     @req isterminal(::P, ::S)
-    @req generate_sr(::ModalMDP{D,C,AC} where {D,C,AC}, ::C, ::RNG where {RNG <: AbstractRNG}) # OR transition + reward?
+    @req generate_sr(::ModalMDP{D,C,AC} where {D,C,AC}, ::C, ::AC, ::RNG where {RNG <: AbstractRNG}) # OR transition + reward?
     @req isterminal(::ModalMDP{D,C,AC} where {D,C,AC}, ::C)
 
     # Global layer requirements
     @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}} where {D,C,AD})
-    @req generate_goal_sample_set(::P, ::C, ::Int64)
+    @req generate_goal_sample_set(::P, ::C, ::Int64, ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D)
-    @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D} where {D}, ::Int64)
+    @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D} where {D}, ::Int64, ::RNG where {RNG <: AbstractRNG})
     
 
     # Local layer requirements

@@ -43,5 +43,4 @@ export
 
 include("cmssp_base.jl")
 
-
 end # End of submodule

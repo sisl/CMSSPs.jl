@@ -10,22 +10,24 @@ Attributes:
     - `curr_soln_path_idxs::Vector{Int64}` The in-order list of indices from current start to current goal
     - `num_samples::Int64` The N parameter for the number of bridge samples to generate per mode switch
 """
-mutable struct GraphTracker{D,C,AD}
+mutable struct GraphTracker{D,C,AD,RNG <: AbstractRNG}
     curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD}}
     mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
     curr_start_idx::Int64
     curr_goal_idx::Int64
     curr_soln_path_idxs::Vector{Int}
     num_samples::Int64
+    rng::RNG
 end
 
-function GraphTracker{D,C,AD}(N::Int64) where {D,C,AD}
+function GraphTracker{D,C,AD}(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
     return GraphTracker{D,C}(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
                         Dict{Tuple{D,D},MVector{2,Int64}}(),
                         0,
                         0,
                         Vector{Int64}(undef,0),
-                        N)
+                        N,
+                        rng)
 end
 
 """
@@ -156,7 +158,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
             end
         else
             # Generate goal sample set
-            goal_samples = generate_goal_sample_set(vis.cmssp, popped_cont, vis.graph_tracker.num_samples)
+            goal_samples = generate_goal_sample_set(vis.cmssp, popped_cont, vis.graph_tracker.num_samples, vis.graph_tracker.rng)
             @assert length(goal_samples) > 0
 
             # Update mode switch map range
@@ -185,7 +187,8 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
             end
         else
             # Generate bridge samples
-            bridge_samples = generate_bridge_sample_set(vis.cmssp, vis.context_set, popped_cont, (popped_mode, nvm), vis.graph_tracker.num_samples)
+            bridge_samples = generate_bridge_sample_set(vis.cmssp, vis.context_set, popped_cont, 
+                                                        (popped_mode, nvm), vis.graph_tracker.num_samples, vis.graph_tracker.rng)
             @assert length(bridge_samples) > 0
 
             # Update mode switch map range

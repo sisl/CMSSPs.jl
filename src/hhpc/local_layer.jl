@@ -253,7 +253,7 @@ Arguments:
 function horizon_weighted_value(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
                                 tp_dist::TPDistribution, curr_state::C, target_state::C) where {D,C,AC}
 
-    weighted_value = 0.0
+    weighted_value = -Inf
     weighted_minvalue = 0.0
 
     # Iterate over horizon values and weight
@@ -338,7 +338,7 @@ function get_best_intramodal_action(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHo
     (weighted_value, weighted_minvalue) = horizon_weighted_value(mdp,modal_policy,curr_timestep,
                                                                  tp_dist,curr_state,target_state)
 
-    if weighted_value < mdp.beta_threshold * weighted_minvalue
+    if weighted_value <= mdp.beta_threshold * weighted_minvalue
         return nothing # closed-loop interrupt
     end
 
