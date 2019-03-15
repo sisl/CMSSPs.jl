@@ -106,7 +106,7 @@ end
 
     # HHPC requirements
     @req startstate_context(::P, ::RNG where {RNG <: AbstractRNG})
-    @req simulate(::P, ::S, ::A, ::Int64)
+    @req simulate(::P, ::S, ::A, ::Int64, ::RNG where {RNG <: AbstractRNG})
 
 end
 

@@ -99,6 +99,20 @@ function get_relative_state(mdp::Toy2DModalMDPType, source::Toy2DContState, targ
     return get_relative_state(source, target) 
 end
 
+
+function POMDPs.convert_s(::Type{V}, c::Toy2DContState, mdp::Toy2DModalMDPType) where V <: AbstractVector{Float64}
+    v = SVector{2,Float64}(c.x, c.y)
+    return v
+end
+
+function POMDPs.convert_s(::Type{Toy2DContState}, v::AbstractVector{Float64}, mdp::Toy2DModalMDPType)
+    c = Toy2DContState(v[1], v[2])
+    return c
+end
+
+
+
+
 # Needs to be bound to parameters in runtime script
 function isterminal(cmssp::Toy2DCMSSPType, state::Toy2DStateType, params::Toy2DParameters)
     return state.mode == GOAL_MODE && norm(get_relative_state(state,GOAL_CENTRE)) < params.epsilon
@@ -127,11 +141,9 @@ function POMDPs.reward(mdp::Toy2DModalMDPType, relative_state::Toy2DContState,
 end
 
 
-# In this case, independent of actual mode
-function POMDPs.generate_sr(mdp::Toy2DModalMDPType, relative_state::Toy2DContState, 
-                            cont_action::Toy2DContAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+function next_state_reward(state::Toy2DContState, 
+                     cont_action::Toy2DContAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
-    # NOTE that this is the relative state
     noise_dist = MvNormal([0.01 + cont_action.xdot/5.0, 0.01 + cont_action.ydot/5.0])
     xy_noise = rand(noise_dist, rng)
     new_rel_x = clamp(relative_state.x + cont_action.xdot + xy_noise[1], -1.0, 1.0)
@@ -141,6 +153,15 @@ function POMDPs.generate_sr(mdp::Toy2DModalMDPType, relative_state::Toy2DContSta
     reward_val = reward(mdp, relative_state, cont_action, new_rel_state)
 
     return new_rel_state, reward_val
+end
+
+    
+
+# In this case, independent of actual mode
+function POMDPs.generate_sr(mdp::Toy2DModalMDPType, relative_state::Toy2DContState, 
+                            cont_action::Toy2DContAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+    # can be used with relative state too
+    return next_state_reward(relative_state, cont_action, rng)
 end
 
 # Needs to be bound to context set in runtime script
@@ -171,7 +192,7 @@ function update_vertices_with_context!(cmssp::Toy2DCMSSPType, vertices::Vector{T
                 if switch_points[1] != switch
                     continue
                 end
-                pt_dist = norm(v.pre_bridge_state, switch_points[2])
+                pt_dist = norm(get_relative_state(v.pre_bridge_state, switch_points[2]))
                 if pt_dist < params.epsilon
                     tp_time = hor
                     break
@@ -238,7 +259,7 @@ end
 
 function generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2DContState, 
                                     mode_pair::Toy2DModePair, num_samples::Int64,
-                                    rng::RNG, context_set::Vector{Toy2DContextType} params::Toy2DParameters) where {RNG <: AbstractRNG}
+                                    rng::RNG, context_set::Vector{Toy2DContextType}, params::Toy2DParameters) where {RNG <: AbstractRNG}
 
     bridge_samples = Vector{BridgeSample{Toy2DContState}}(undef,0)
 
@@ -264,4 +285,52 @@ function generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2DCont
     end
 
     return bridge_samples
+end
+
+
+
+function simulate(cmssp::Toy2DCMSSPType, state::Toy2DStateType, a::Toy2DActionType, t::Int64, rng::RNG,
+                  context_dict::Dict{Int64, Vector{Toy2DContextType}}, params::Toy2DParameters) where {RNG <: AbstractRNG}
+
+    curr_contextset = context_dict[t]
+    curr_context = curr_contextset[1]
+    new_context = context_dict[t+1]
+
+    curr_mode = state.mode
+    curr_cont = state.continuous
+
+    if typeof(a.action) <: Int64
+        # action is mode switch - attempt
+        mode_idx = mode_index(cmssp, curr_mode)
+        mode_ac_idx = mode_actionindex(cmssp, a.action)
+        next_mode_idx = findfirst(x -> x > 0.0, cmssp.modeswitch_mdp[mode_idx, mode_ac_idx,:])
+        next_mode = cmssp.modes[next_mode_idx]
+
+        # Action cost incurred no matter what
+        reward = cmssp.R[mode_idx, mode_ac_idx]
+
+        # Check if it can be done based on context
+        for switch_points in curr_context
+            if switch_points[1] == (curr_mode,next_mode)
+                if norm(get_relative_state(curr_cont,switch_points[2])) < params.epsilon
+                    @info "Mode switch possible!"
+                    next_state = Toy2DStateType(next_mode, curr_cont)
+                    return (next_state, new_context, reward, false)
+                else
+                    @info "Mode switch failed!"
+                    next_state = curr_state
+                    return (next_state, new_context, reward, true)
+                end
+            end
+        end
+
+        @info "Attempted mode switch unavailable from context!"
+        next_state = curr_state
+        return (new_state, new_context, reward, true)
+    else
+        # Control action within mode
+        new_cont_state, reward = next_state_reward(curr_cont, a.action, rng)
+        next_state = Toy2DStateType(curr_mode, new_cont_state)
+        return (next_state, new_context, reward, false)
+    end
 end
