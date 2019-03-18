@@ -56,12 +56,11 @@ function get_toy2d_actions(params::Toy2DParameters)
     return actions
 end
 
-
 # Hardcoded tabular MDP
 # 1 -- 2 -- 5
 # |         |
 # 3 -- 4 -- |
-function get_tabular_mdp()
+function get_toy2d_switch_mdp()
 
     # Initialize T as 5 x 1 x 5
     T = zeros(5, 2, 5)
@@ -84,6 +83,16 @@ function get_tabular_mdp()
     return TabularMDP(T, R, 1.0)
 end
 
+
+# Create Toy2DCMSSP based on params
+function create_toy2d_cmssp(params::Toy2DParameters)
+
+    actions = get_toy2d_actions(params)
+    modes = TOY2D_MODES
+    switch_mdp = get_toy2d_switch_mdp()
+
+    return Toy2DCMSSPType(actions, modes, switch_mdp)
+end
 
 
 # Needs to be bound to parameters in runtime script

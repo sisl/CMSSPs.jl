@@ -89,14 +89,14 @@ end
     AC = controlactiontype(cmssp)
 
     @req isterminal(::P, ::S)
-    @req generate_sr(::ModalMDP{D,C,AC} where {D,C,AC}, ::C, ::AC, ::RNG where {RNG <: AbstractRNG}) # OR transition + reward?
+    @req generate_sr(::ModalMDP{D,C,AC} where {D,C,AC}, ::C, ::AC, ::typeof(solver.rng)) # OR transition + reward?
     @req isterminal(::ModalMDP{D,C,AC} where {D,C,AC}, ::C)
 
     # Global layer requirements
     @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}} where {D,C,AD}, ::Tuple{D,D} where D)
-    @req generate_goal_sample_set(::P, ::C, ::Int64, ::RNG where {RNG <: AbstractRNG})
+    @req generate_goal_sample_set(::P, ::C, ::Int64, ::typeof(solver.rng))
     @req generate_next_valid_modes(::P, ::D)
-    @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D} where {D}, ::Int64, ::RNG where {RNG <: AbstractRNG})
+    @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D} where {D}, ::Int64, ::typeof(solver.rng))
     
 
     # Local layer requirements
@@ -105,8 +105,8 @@ end
     @req convert_s(::Type{C},::V where V <: AbstractVector{Float64},::ModalMDP{D,C,AC} where {D,C,AC})
 
     # HHPC requirements
-    @req startstate_context(::P, ::RNG where {RNG <: AbstractRNG})
-    @req simulate(::P, ::S, ::A, ::Int64, ::RNG where {RNG <: AbstractRNG})
+    @req startstate_context(::P, ::typeof(solver.rng))
+    @req simulate(::P, ::S, ::A, ::Int64, ::typeof(solver.rng))
 
 end
 
