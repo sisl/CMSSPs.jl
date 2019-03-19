@@ -13,18 +13,18 @@ using CMSSPs
 
 # Constants for parameters - read from file later??
 const SPEED_LIMIT = 0.075
-const SPEED_RESOLUTION = 0.015
+const SPEED_VALS = 11
 const EPSILON = 0.01
-const N_GEN_SAMPLES = 20
+const N_GEN_SAMPLES =  10
 const NUM_BRIDGE_SAMPLES = 20
 
 const HORIZON_LIMIT = 20
-const AXIS_VALS = 41
+const AXIS_VALS = 31
 
 rng = MersenneTwister(10)
 
 # Create parameters and then CMSSP
-params = Toy2DParameters(SPEED_LIMIT, SPEED_RESOLUTION, EPSILON, N_GEN_SAMPLES, NUM_BRIDGE_SAMPLES)
+params = Toy2DParameters(SPEED_LIMIT, SPEED_VALS, EPSILON, N_GEN_SAMPLES, NUM_BRIDGE_SAMPLES)
 cmssp = create_toy2d_cmssp(params)
 
 # Set up the modal mdp

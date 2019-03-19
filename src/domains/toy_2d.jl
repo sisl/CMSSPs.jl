@@ -13,7 +13,7 @@ norm(a::Toy2DContAction) = LinearAlgebra.norm(SVector{2,Float64}(a.xdot,a.ydot))
 # Note - Hardcoding 1 x 1 grid because it can be scale-invariant
 struct Toy2DParameters
     speed_limit::Float64
-    speed_resolution::Float64
+    speed_vals::Int64
     epsilon::Float64
     num_generative_samples::Int64
     num_bridge_samples::Int64
@@ -45,9 +45,10 @@ function get_toy2d_actions(params::Toy2DParameters)
     idx = 2
     push!(actions, Toy2DActionType(2,idx))
 
+    vel_vals = polyspace_symmetric(params.speed_limit, params.speed_vals)
 
     # Now enter control actions based on parameters
-    vel_vals = range(-params.speed_limit, stop=params.speed_limit, step=params.speed_resolution)
+    #vel_vals = range(-params.speed_limit, stop=params.speed_limit, step=params.speed_resolution)
     for xdot in vel_vals
         for ydot in vel_vals
             idx += 1
@@ -170,7 +171,7 @@ end
 function next_state_reward(mdp::Toy2DModalMDPType, state::Toy2DContState, 
                            cont_action::Toy2DContAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
-    noise_dist = MvNormal([0.0005 + cont_action.xdot/100.0, 0.0005 + cont_action.ydot/100.0])
+    noise_dist = MvNormal([0.0001 + cont_action.xdot/100.0, 0.0001 + cont_action.ydot/100.0])
     xy_noise = rand(rng,noise_dist)
     new_x = clamp(state.x + cont_action.xdot + xy_noise[1], -1.0, 1.0)
     new_y = clamp(state.y + cont_action.ydot + xy_noise[2], -1.0, 1.0)

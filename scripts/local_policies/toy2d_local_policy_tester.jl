@@ -12,27 +12,27 @@ using LocalApproximationValueIteration
 using CMSSPs
 
 const SPEED_LIMIT = 0.075
-const SPEED_RESOLUTION = 0.015
-const EPSILON = 0.01
+const SPEED_VALS = 11
+const EPSILON = 0.02
 const N_GEN_SAMPLES = 10
 const NUM_BRIDGE_SAMPLES = 20
 const HORIZON_LIMIT = 20
 
 
-inhor_file = ARGS[1]
-outhor_file = ARGS[2]
+inhor_file = "toy2d-grid1-inhor.jld2"
+outhor_file = "toy2d-grid1-outhor.jld2"
 trials = 5
 
-rng = MersenneTwister(12)
+rng = MersenneTwister(27)
 
 modal_horizon_policy = load_modal_horizon_policy_localapprox(inhor_file, outhor_file)
 
 # Create parameters and then CMSSP
-params = Toy2DParameters(SPEED_LIMIT, SPEED_RESOLUTION, EPSILON, N_GEN_SAMPLES, NUM_BRIDGE_SAMPLES)
+params = Toy2DParameters(SPEED_LIMIT, SPEED_VALS, EPSILON, N_GEN_SAMPLES, NUM_BRIDGE_SAMPLES)
 cmssp = create_toy2d_cmssp(params)
 mdp = Toy2DModalMDPType(1, cmssp.control_actions, 1.0, HORIZON_LIMIT)
 
-POMDPs.isterminal(mdp,state) = CMSSPs.CMSSPDomains.isterminal(mdp,state,params)
+POMDPs.isterminal(mdp::Toy2DModalMDPType,state::Toy2DContState) = CMSSPs.CMSSPDomains.isterminal(mdp,state,params)
 
 for i = 1:trials
 
@@ -44,8 +44,6 @@ for i = 1:trials
     tp_dist = TPDistribution([start_horizon],[1.0])
 
     @show target_state, start_horizon
-    @show horizon_weighted_value(modal_horizon_policy, 0, tp_dist, curr_state, target_state)
-    readline()
 
     for t = 0:1:start_horizon-1
         a = get_best_intramodal_action(modal_horizon_policy, t, tp_dist, curr_state, target_state)
@@ -54,11 +52,11 @@ for i = 1:trials
             break
         end
         (new_state, reward) = generate_sr(mdp, curr_state, a.action, rng)
-        @show t,a,new_state
-        readline()
         curr_state = new_state
         tot_cost += -1.0*reward
     end
+
+    @show CMSSPs.CMSSPDomains.norm(CMSSPs.CMSSPDomains.get_relative_state(curr_state,target_state))
 
     if POMDPs.isterminal(mdp, CMSSPs.CMSSPDomains.get_relative_state(curr_state,target_state))
         @show "Success!"
