@@ -2,9 +2,9 @@
 The Modal Policy has an in-horizon and an out-horizon policy. If the context has no temporal nature,
 the in-horizon-policy is null and only out-horizon policy is used.
 """
-struct ModalHorizonPolicy{C,AC}
-    in_horizon_policy::Policy
-    out_horizon_policy::Policy
+struct ModalHorizonPolicy{P <: Policy}
+    in_horizon_policy::P
+    out_horizon_policy::P
 end
 
 """
@@ -47,14 +47,20 @@ mutable struct ModalMDP{D,C,AC} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction
     terminal_costs_set::Bool
 end
 
-function ModalMDP{D,C,AC}(mode::D, actions::Vector{ModalAction{AC}}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AC}
-    return ModalMDP{D,C,AC}(mode, actions, beta, horizon_limit, Vector{Float64}(undef,horizon_limit), Inf, false)
+
+function ModalMDP{D,C,AC}(mode::D, actions::Vector{AC}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AC}
+    modal_actions = [ModalAction(a,i) for (i,a) in enumerate(actions)]
+    return ModalMDP{D,C,AC}(mode, modal_actions, beta, horizon_limit, Inf*ones(horizon_limit), Inf, false)
+end
+
+function ModalMDP{D,C,AC}(mode::D) where {D,C,AC}
+    return ModalMDP{D,C,AC}(mode,Vector{ModalAction{AC}}(undef,0))
 end
 
 
 function set_horizon_limit!(mdp::ModalMDP{D,C,AC}, h::Int64) where {D,C,AC}
     mdp.horizon_limit = h
-    mdp.min_value_per_horizon = Vector{Float64}(-Inf,h)
+    mdp.min_value_per_horizon = Inf*ones(h)
 end
 
 
@@ -78,7 +84,7 @@ end
 """
 Convert horizon-augmented vector to ModalStateAugmented
 """
-function POMDPs.convert_s(::Type{ModalStateAugmented}, v::AbstractVector{Float64},
+function POMDPs.convert_s(::Type{ModalStateAugmented{C}}, v::AbstractVector{Float64},
                           mdp::ModalMDP{D,C,AC}) where {D,C,AC}
     state = convert_s(C, v, mdp)
     horizon = convert(Int64,v[end])
@@ -92,14 +98,14 @@ function POMDPs.generate_sr(mdp::ModalMDP{D,C,AC}, s::ModalStateAugmented{C}, a:
 
     # Get next state and underlying cost for dynamics
     # TODO : This should be the same regardless of relative or absolute state
-    (sp,r) = generate_sr(mdp,s.state,a,rng)
+    (sp,r) = generate_sr(mdp,s.relative_state,a.action,rng)
     cost = -1.0*r
 
     # If at end of horizon, increment with terminal cost penalty
     # if sp is not terminal
     if s.horizon == 1
         if mdp.terminal_costs_set
-            if POMDPs.isterminal(mdp, sp.relative_state) == false
+            if POMDPs.isterminal(mdp, sp) == false
                 cost += mdp.terminal_cost_penalty
             end
         end
@@ -125,14 +131,15 @@ Arguments:
 """
 function compute_terminalcost_localapprox!(mdp::ModalMDP{D,C,AC}, cmssp::CMSSP{D,C,AD,AC}, mode::D,
                                           lfa::LFA) where {D,C,AD,AC,LFA <: LocalFunctionApproximator}
-    max_contr_cost = Inf
-    max_switch_cost = Inf
+    max_contr_cost = 0.0
+    max_switch_cost = 0.0
 
     # First iterate over continuous actions
-    for action in actions(mdp)
+    @info "Getting max control cost"
+    for a in actions(mdp)
         for point in get_all_interpolating_points(lfa)
             state = convert_s(C, point, mdp)
-            cost = -1.0*reward(state,action)
+            cost = -1.0*expected_reward(mdp,state,a.action)
             if cost > max_contr_cost
                 max_contr_cost = cost
             end
@@ -140,12 +147,13 @@ function compute_terminalcost_localapprox!(mdp::ModalMDP{D,C,AC}, cmssp::CMSSP{D
     end
     max_contr_cost = max_contr_cost * mdp.horizon_limit
 
-    mode_idx = mode_index(cmssp, d)
+    mode_idx = mode_index(cmssp, mode)
 
+    @info "Getting max switch cost"
     # now iterate over discrete actions and get out-of-mode costs
     for (ac_idx,action) in enumerate(cmssp.mode_actions)
         for (next_mode_idx,_mode) in enumerate(cmssp.modes)
-            if cmssp.modeswitch_mdp.T[next_mode_idx, ac_idx, mode_idx] > 0.0
+            if cmssp.modeswitch_mdp.T[mode_idx, ac_idx, next_mode_idx] > 0.0
                 cost = -1.0*cmssp.modeswitch_mdp.R[mode_idx, ac_idx]
                 if cost > max_switch_cost
                     max_switch_cost = cost
@@ -176,7 +184,7 @@ function finite_horizon_VI_localapprox!(mdp::ModalMDP{D,C,AC}, lfa::LFA,
     mdp.terminal_costs_set = false
     outhor_lfa = finite_horizon_extension(lfa, 0:1:mdp.horizon_limit)
     outhor_solver = LocalApproximationValueIterationSolver(outhor_lfa, max_iterations = 1,
-                                                           verbose=true, rng, is_mdp_generative=is_mdp_generative,
+                                                           verbose=true, rng=rng, is_mdp_generative=is_mdp_generative,
                                                            n_generative_samples=n_generative_samples)
     out_horizon_policy_augmented = solve(outhor_solver, mdp)
 
@@ -202,7 +210,7 @@ function finite_horizon_VI_localapprox!(mdp::ModalMDP{D,C,AC}, lfa::LFA,
     mdp.terminal_costs_set = true
     inhor_lfa = finite_horizon_extension(lfa, 0:1:mdp.horizon_limit)
     inhor_solver = LocalApproximationValueIterationSolver(inhor_lfa, max_iterations = 1,
-                                                           verbose=true, rng, is_mdp_generative=is_mdp_generative,
+                                                           verbose=true, rng=rng, is_mdp_generative=is_mdp_generative,
                                                            n_generative_samples=n_generative_samples)
     in_horizon_policy = solve(inhor_solver, mdp)
 
@@ -214,27 +222,26 @@ Compute the worst cost or minimum value per horizon and update mdp object in pla
 
 Arguments:
     - `mdp::ModalMDP{D,C,AC}`
-    - `modal_policy::ModalHorizonPolicy`
+    - `modal_policy::ModalHorizonPolicy{P}`
 """
-function compute_min_value_per_horizon_localapprox!(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy) where {D,C,AC}
+function compute_min_value_per_horizon_localapprox!(modal_policy::ModalHorizonPolicy{P}) where {D,C,AC,P}
 
     # Access the underlying value function approximator
     all_interp_values_inhor = get_all_interpolating_values(modal_policy.in_horizon_policy.interp)
     all_interp_states_inhor = get_all_interpolating_points(modal_policy.in_horizon_policy.interp)
 
-    for (v,s) in zip(all_interp_values, all_interp_states)
-        hor_val = s[end]
+    for (v,s) in zip(all_interp_values_inhor, all_interp_states_inhor)
+        hor_val = convert(Int64,s[end])
         
         if hor_val == 0
             continue
         end
 
         # Compute lowest value
-        if hor_val > 0 && v < mdp.min_value_per_horizon[hor_val]
-            mdp.min_value_per_horizon[hor_val] = v
+        if v < modal_policy.in_horizon_policy.mdp.min_value_per_horizon[hor_val]
+            modal_policy.in_horizon_policy.mdp.min_value_per_horizon[hor_val] = v
         end
     end
-
 end
 
 
@@ -250,11 +257,13 @@ Arguments:
     - `curr_state::C`
     - `target_state::C`
 """
-function horizon_weighted_value(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
-                                tp_dist::TPDistribution, curr_state::C, target_state::C) where {D,C,AC}
+function horizon_weighted_value(modal_policy::ModalHorizonPolicy{P}, curr_timestep::Int64,
+                                tp_dist::TPDistribution, curr_state::C, target_state::C) where {D,C,AC,P}
 
-    weighted_value = -Inf
+    weighted_value = 0.0
     weighted_minvalue = 0.0
+
+    mdp = modal_policy.in_horizon_policy.mdp
 
     # Iterate over horizon values and weight
     # Subtract the current time-step to get the true relative time
@@ -272,8 +281,7 @@ function horizon_weighted_value(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizo
             weighted_minvalue += p*(-Inf)
         else
             temp_state = ModalStateAugmented(temp_relative_state, h)
-            weighted_value += p*POMDPs.value(modal_policy.in_horizon_policy,temp_state)
-
+            weighted_value += p*value(modal_policy.in_horizon_policy,temp_state)
             weighted_minvalue += p*mdp.min_value_per_horizon[h]
         end
     end
@@ -295,10 +303,12 @@ Arguments:
     - `target_state::C`
     - `a::ModalAction{AC}`
 """
-function horizon_weighted_actionvalue(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
-                                tp_dist::TPDistribution, curr_state::C, target_state::C, a::ModalAction{AC}) where {D,C,AC}
+function horizon_weighted_actionvalue(modal_policy::ModalHorizonPolicy{P}, curr_timestep::Int64,
+                                tp_dist::TPDistribution, curr_state::C, target_state::C, a::ModalAction{AC}) where {D,C,AC,P}
 
     total_value = 0.0
+
+    mdp = modal_policy.in_horizon_policy.mdp
 
     # Iterate over horizon values and weight 
     for (h_,p) in tp_dist
@@ -309,10 +319,10 @@ function horizon_weighted_actionvalue(mdp::ModalMDP{D,C,AC}, modal_policy::Modal
         temp_relative_state = get_relative_state(mdp, curr_state, target_state)
         if h > mdp.horizon_limit
             temp_state = ModalStateAugmented(temp_relative_state, mdp.horizon_limit+1)
-            total_value += p*POMDPs.action_value(modal_policy.out_horizon_policy, temp_state, a)
+            total_value += p*action_value(modal_policy.out_horizon_policy, temp_state, a)
         else
             temp_state = ModalStateAugmented(temp_relative_state, h)
-            total_value += p*POMDPs.action_value(modal_policy.in_horizon_policy, temp_state, a)
+            total_value += p*action_value(modal_policy.in_horizon_policy, temp_state, a)
         end
     end
 
@@ -331,11 +341,13 @@ Arguments:
     - `curr_state::C`
     - `target_state::C`
 """
-function get_best_intramodal_action(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
-                               tp_dist::TPDistribution, curr_state::C, target_state::C) where {D,C,AC}
+function get_best_intramodal_action(modal_policy::ModalHorizonPolicy{P}, curr_timestep::Int64,
+                               tp_dist::TPDistribution, curr_state::C, target_state::C) where {D,C,AC,P}
+
+    mdp = modal_policy.in_horizon_policy.mdp
 
     # First check if abort needed
-    (weighted_value, weighted_minvalue) = horizon_weighted_value(mdp,modal_policy,curr_timestep,
+    (weighted_value, weighted_minvalue) = horizon_weighted_value(modal_policy,curr_timestep,
                                                                  tp_dist,curr_state,target_state)
 
     if weighted_value <= mdp.beta_threshold * weighted_minvalue
@@ -346,9 +358,9 @@ function get_best_intramodal_action(mdp::ModalMDP{D,C,AC}, modal_policy::ModalHo
     best_action_val = -Inf
 
     for a in mdp.actions
-        action_val = horizon_weighted_actionvalue(mdp, modal_policy, curr_timestep, tp_dist, curr_state, target_state, a)
+        action_val = horizon_weighted_actionvalue(modal_policy, curr_timestep, tp_dist, curr_state, target_state, a)
         if action_val > best_action_val
-            best_action_val = action
+            best_action_val = action_val
             best_action = a
         end
     end

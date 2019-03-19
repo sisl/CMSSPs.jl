@@ -27,8 +27,10 @@ using TOML
 # Include submodule files
 include("models/CMSSPModel.jl")
 include("hhpc/HHPC.jl")
+include("domains/CMSSPDomains.jl")
 
 @reexport using CMSSPs.CMSSPModel
 @reexport using CMSSPs.HHPC
+@reexport using CMSSPs.CMSSPDomains
 
 end # module

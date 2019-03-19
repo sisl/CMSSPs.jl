@@ -21,6 +21,10 @@ using POMDPSimulators
 using LocalFunctionApproximation
 using LocalApproximationValueIteration
 
+# For saving and loading 
+using JLD2
+using FileIO
+
 # CMSSPs submodule
 using CMSSPs.CMSSPModel
 
@@ -53,13 +57,24 @@ export
     HHPCSolver,
     solve
 
+
+
 # Utils
 export
     save_localapproxvi_policy_to_jld2,
     load_localapproxvi_policy_from_jld2,
     load_modal_horizon_policy_localapprox,
-    save_modal_horizon_policy_localapprox
+    save_modal_horizon_policy_localapprox,
+    log2space_symmetric,
+    polyspace_symmetric
 
+export
+    expected_reward,
+    get_relative_state
+
+
+function expected_reward end
+function get_relative_state end
 
 include("global_layer.jl")
 include("local_layer.jl")

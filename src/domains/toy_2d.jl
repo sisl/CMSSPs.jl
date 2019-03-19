@@ -2,35 +2,37 @@ struct Toy2DContState
     x::Float64
     y::Float64
 end
-norm(s::Toy2DContState) = norm(SVector{2,Float64}(s.x,s.y))
+norm(s::Toy2DContState) = LinearAlgebra.norm(SVector{2,Float64}(s.x,s.y))
 
 struct Toy2DContAction
     xdot::Float64
     ydot::Float64
 end
-norm(a::Toy2DContAction) = norm(SVector{2,Float64}(a.x,a.y))
+norm(a::Toy2DContAction) = LinearAlgebra.norm(SVector{2,Float64}(a.xdot,a.ydot))
 
 # Note - Hardcoding 1 x 1 grid because it can be scale-invariant
 struct Toy2DParameters
     speed_limit::Float64
     speed_resolution::Float64
     epsilon::Float64
+    num_generative_samples::Int64
+    num_bridge_samples::Int64
 end
 
 # Const types
 const Toy2DStateType = CMSSPState{Int64,Toy2DContState}
 const Toy2DActionType = CMSSPAction{Int64,Toy2DContAction}
-const Toy2DCMSSPType = CMSSP{Int64,Toy2DStateType,Int64,Toy2DContAction}
+const Toy2DCMSSPType = CMSSP{Int64,Toy2DContState,Int64,Toy2DContAction}
 const Toy2DModalMDPType = ModalMDP{Int64,Toy2DContState,Toy2DContAction}
-const Toy2DOpenLoopVertex = OpenLoopVertex{Int64,Toy2DStateType,Int64}
+const Toy2DOpenLoopVertex = OpenLoopVertex{Int64,Toy2DContState,Int64}
 # Context is current collection of all valid transition points at each timestep
 const Toy2DModePair = Tuple{Int64, Int64}
 const Toy2DContextType = Vector{Tuple{Toy2DModePair,Toy2DContState}}
 
 # Const values
 const TOY2D_MODES = [1,2,3,4,5]
-const GOAL_CENTRE = Toy2DContState(0.5,0.5)
-const GOAL_MODE = 5
+const TOY2D_GOAL_CENTRE = Toy2DContState(0.5,0.5)
+const TOY2D_GOAL_MODE = 5
 
 # Hardcoded - only 1 modeswitch action
 # Get control actions based on parameters
@@ -73,11 +75,11 @@ function get_toy2d_switch_mdp()
 
     R = zeros(5,2)
     R[1,1] = -1.0 # For T[1,1,2]
-    R[1,3] = -2.0 # For T[1,2,3]
-    R[2,5] = -8.0
-    R[3,4] = -2.0
-    R[3,5] = -2.0
-    R[4,5] = -3.0
+    R[1,2] = -2.0 # For T[1,2,3]
+    R[2,1] = -8.0
+    R[3,1] = -2.0
+    R[3,2] = -2.0
+    R[4,1] = -3.0
 
     # Undiscounted
     return TabularMDP(T, R, 1.0)
@@ -101,16 +103,17 @@ function isterminal(mdp::Toy2DModalMDPType, relative_state::Toy2DContState, para
 end
 
 function get_relative_state(source::Toy2DContState, target::Toy2DContState)
-    return Toy2DContState(target.x - source.x, target.y - source.y)
+    return Toy2DContState(source.x - target.x, source.y - target.y)
 end
 
-function get_relative_state(mdp::Toy2DModalMDPType, source::Toy2DContState, target::Toy2DContState)
+function HHPC.get_relative_state(mdp::Toy2DModalMDPType, source::Toy2DContState, target::Toy2DContState)
     return get_relative_state(source, target) 
 end
 
 
-function POMDPs.convert_s(::Type{V}, c::Toy2DContState, mdp::Toy2DModalMDPType) where V <: AbstractVector{Float64}
-    v = SVector{2,Float64}(c.x, c.y)
+function POMDPs.convert_s(t::Type{V}, c::Toy2DContState, mdp::Toy2DModalMDPType) where V <: AbstractVector{Float64}
+    v_ = SVector{2,Float64}(c.x, c.y)
+    v = convert(t,v_)
     return v
 end
 
@@ -124,17 +127,17 @@ end
 
 # Needs to be bound to parameters in runtime script
 function isterminal(cmssp::Toy2DCMSSPType, state::Toy2DStateType, params::Toy2DParameters)
-    return state.mode == GOAL_MODE && norm(get_relative_state(state,GOAL_CENTRE)) < params.epsilon
+    return state.mode == TOY2D_GOAL_MODE && norm(get_relative_state(state,TOY2D_GOAL_CENTRE)) < params.epsilon
 end
 
 function sample_toy2d(rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
     d = Uniform(0.0,1.0)
-    return Toy2DContState(rand(d,rng), rand(d,rng))
+    return Toy2DContState(rand(rng,d), rand(rng,d))
 end
 
-function startstate_context(cmssp::Toy2DCMSSPType, start_context::ContextSetType, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+function startstate_context(cmssp::Toy2DCMSSPType, rng::RNG, start_context::Toy2DContextType) where {RNG <: AbstractRNG}
     start_state = Toy2DStateType(1, sample_toy2d(rng))
-    return start_state, start_context
+    return (start_state, start_context)
 end
 
 
@@ -143,34 +146,48 @@ end
 # global layer reqs
 
 # Just used by generate_sr - euclidean distance + squared velocity cost
-function POMDPs.reward(mdp::Toy2DModalMDPType, relative_state::Toy2DContState,
-                       cont_action::Toy2DContAction, relative_statep::Toy2DContState)
-    delta_relstate = Toy2DContState(relative_statep.x - relative_state.x, relative_statep.y - relative_state.y)
-    reward = -1.0*(norm(delta_relstate) + 0.5*norm(cont_action)^2)    
+function POMDPs.reward(mdp::Toy2DModalMDPType, state::Toy2DContState,
+                       cont_action::Toy2DContAction, statep::Toy2DContState)
+    delta_state = Toy2DContState(statep.x - state.x, statep.y - state.y)
+    reward = -1.0*(norm(delta_state) + 0.0*norm(cont_action)^2)
+    return reward  
 end
 
 
-function next_state_reward(state::Toy2DContState, 
-                     cont_action::Toy2DContAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+function expected_reward(mdp::Toy2DModalMDPType, state::Toy2DContState,
+                         cont_action::Toy2DContAction, rng::RNG, params::Toy2DParameters) where {RNG <: AbstractRNG}
+    avg_rew = 0.0
+    for i = 1:params.num_generative_samples
+        (_, r) = next_state_reward(mdp,state, cont_action, rng)
+        avg_rew += r
+    end
+    avg_rew /= params.num_generative_samples
+    return avg_rew
+end 
+    
 
-    noise_dist = MvNormal([0.01 + cont_action.xdot/5.0, 0.01 + cont_action.ydot/5.0])
-    xy_noise = rand(noise_dist, rng)
-    new_rel_x = clamp(relative_state.x + cont_action.xdot + xy_noise[1], -1.0, 1.0)
-    new_rel_y = clamp(relative_state.y + cont_action.ydot + xy_noise[2], -1.0, 1.0)
 
-    new_rel_state = Toy2DContState(new_rel_x, new_rel_y)
-    reward_val = reward(mdp, relative_state, cont_action, new_rel_state)
+function next_state_reward(mdp::Toy2DModalMDPType, state::Toy2DContState, 
+                           cont_action::Toy2DContAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
-    return new_rel_state, reward_val
+    noise_dist = MvNormal([0.0005 + cont_action.xdot/100.0, 0.0005 + cont_action.ydot/100.0])
+    xy_noise = rand(rng,noise_dist)
+    new_x = clamp(state.x + cont_action.xdot + xy_noise[1], -1.0, 1.0)
+    new_y = clamp(state.y + cont_action.ydot + xy_noise[2], -1.0, 1.0)
+
+    new_state = Toy2DContState(new_x, new_y)
+    reward_val = reward(mdp, state, cont_action, new_state)
+
+    return (new_state, reward_val)
 end
 
     
 
 # In this case, independent of actual mode
-function POMDPs.generate_sr(mdp::Toy2DModalMDPType, relative_state::Toy2DContState, 
+function POMDPs.generate_sr(mdp::Toy2DModalMDPType, state::Toy2DContState, 
                             cont_action::Toy2DContAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
     # can be used with relative state too
-    return next_state_reward(relative_state, cont_action, rng)
+    return next_state_reward(mdp, state, cont_action, rng)
 end
 
 # Needs to be bound to context set in runtime script
@@ -225,11 +242,11 @@ function generate_goal_sample_set(cmssp::Toy2DCMSSPType, popped_cont::Toy2DContS
 
     goal_samples = Vector{Toy2DStateType}(undef,0)
 
-    dx = Uniform(GOAL_CENTRE.x - params.epsilon/2.0, GOAL_CENTRE.x + params.epsilon/2.0)
-    dy = Uniform(GOAL_CENTRE.y - params.epsilon/2.0, GOAL_CENTRE.y + params.epsilon/2.0)
+    dx = Uniform(TOY2D_GOAL_CENTRE.x - params.epsilon/2.0, TOY2D_GOAL_CENTRE.x + params.epsilon/2.0)
+    dy = Uniform(TOY2D_GOAL_CENTRE.y - params.epsilon/2.0, TOY2D_GOAL_CENTRE.y + params.epsilon/2.0)
 
     for i = 1:num_samples
-        push!(goal_samples, Toy2DStateType(GOAL_MODE, Toy2DContState(rand(dx,rng), rand(dy,rng))))
+        push!(goal_samples, Toy2DStateType(TOY2D_GOAL_MODE, Toy2DContState(rand(rng,dx), rand(rng,dy))))
     end
 
     return goal_samples
@@ -284,15 +301,14 @@ function generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2DCont
                 dy = Uniform(switch_points[2].y - params.epsilon/2.0, switch_points[2].y + params.epsilon/2.0)
 
                 for _ = 1:avg_samples_per_context
-                    bpx = rand(dx, rng)
-                    bpy = rand(dy, rng)
+                    bpx = rand(rng,dx)
+                    bpy = rand(rng,dy)
                     state = Toy2DContState(bpx,bpy)
                     push!(bridge_samples, BridgeSample{Toy2DContState}(state, state, TPDistribution([hor],[1.0])))
                 end
             end
         end
     end
-
     return bridge_samples
 end
 
@@ -338,7 +354,7 @@ function simulate(cmssp::Toy2DCMSSPType, state::Toy2DStateType, a::Toy2DActionTy
         return (new_state, new_context, reward, true)
     else
         # Control action within mode
-        new_cont_state, reward = next_state_reward(curr_cont, a.action, rng)
+        new_cont_state, reward = next_state_reward(Toy2DModalMDPType(curr_mode), curr_cont, a.action, rng)
         next_state = Toy2DStateType(curr_mode, new_cont_state)
         return (next_state, new_context, reward, false)
     end

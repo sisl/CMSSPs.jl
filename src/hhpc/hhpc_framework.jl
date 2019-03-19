@@ -23,11 +23,11 @@ mutable struct HHPCSolver{D,C,AD,AC,RNG <: AbstractRNG} <: Solver
 end
 
 function HHPCSolver{D,C,AD,AC}(N::Int64,modal_policies::Dict{D,ModalHorizonPolicy},
-                               modal_mdps::Dict{D,ModalMDP{D,C,AC}}, deltaT::Int64,
-                               heuristic::Function = n->0, max_steps::Int64=1000, goal_modes::Vector{D},
+                               modal_mdps::Dict{D,ModalMDP{D,C,AC}}, deltaT::Int64, goal_modes::Vector{D},
+                               heuristic::Function = n->0, max_steps::Int64=1000, 
                                rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,AC, RNG <: AbstractRNG}
     return HHPCSolver{D,C,AD,AC}(GraphTracker{D,C,AD}(N),
-                                 modal_policies, modal_mdps, deltaT, heuristic, max_steps, goal_modes, rng)
+                                 modal_policies, modal_mdps, deltaT, goal_modes, heuristic, max_steps, rng)
 end
 
 """
@@ -101,6 +101,7 @@ end
 
     # Local layer requirements
     @req get_relative_state(::ModalMDP{D,C,AC}, ::C, ::C)
+    @req expected_reward(::ModalMDP{D,C,AC}, ::C, ::AC)
     @req convert_s(::Type{V} where V <: AbstractVector{Float64},::C,::ModalMDP{D,C,AC} where {D,C,AC})
     @req convert_s(::Type{C},::V where V <: AbstractVector{Float64},::ModalMDP{D,C,AC} where {D,C,AC})
 

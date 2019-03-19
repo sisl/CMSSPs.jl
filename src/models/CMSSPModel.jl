@@ -41,32 +41,8 @@ export
     BridgeSample,
     OpenLoopVertex
 
-# Toy2D exports
-export
-    Toy2DContState,
-    Toy2DContAction,
-    Toy2DParameters,
-    Toy2DStateType,
-    Toy2DActionType,
-    Toy2DCMSSPType,
-    Toy2DModalMDPType,
-    Toy2DContextType,
-    create_toy2d_cmssp,
-    isterminal
-
-
-# General required exports
-export
-    get_relative_state,
-    startstate_context,
-    update_vertices_with_context!,
-    generate_goal_sample_set,
-    generate_next_valid_modes,
-    generate_bridge_sample_set,
-    simulate
-
 
 include("cmssp_base.jl")
-include("toy_2d.jl")
+# include("toy_2d.jl")
 
 end # End of submodule
