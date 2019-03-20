@@ -39,12 +39,13 @@ const TOY2D_GOAL_MODE = 5
 const TOY2D_QUADRANTS = [(0.0,pi/2), (pi/2,pi), (pi,3*pi/2), (3*pi/2,2*pi)]
 
 mutable struct Toy2DContextSet
+    curr_time::Int64
     switch_bias_dict::Dict{Toy2DModePair,Int64}
     curr_context_set::Vector{Toy2DContextType}
 end
 
 function Toy2DContextSet()
-    return Toy2DContextSet(Dict{Toy2DModePair,Int64}(),Vector{Toy2DContextType}(undef,0))
+    return Toy2DContextSet(0,Dict{Toy2DModePair,Int64}(),Vector{Toy2DContextType}(undef,0))
 end
 
 const Toy2DSolverType = HHPCSolver{Int64,Toy2DContState,Int64,Toy2DContAction,Toy2DContextSet,Toy2DParameters}
@@ -331,6 +332,7 @@ function HHPC.generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2
     params = cmssp.params
     bridge_samples = Vector{BridgeSample{Toy2DContState}}(undef,0)
     curr_context_set = toy2d_context_set.curr_context_set
+    curr_time = toy2d_context_set.curr_time
 
     avg_samples_per_context = convert(Int64,round(num_samples/length(curr_context_set)))
 
@@ -347,7 +349,7 @@ function HHPC.generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2
                     bpx = clamp(rand(rng,dx),0.0,1.0)
                     bpy = clamp(rand(rng,dy),0.0,1.0)
                     state = Toy2DContState(bpx,bpy)
-                    push!(bridge_samples, BridgeSample{Toy2DContState}(state, state, TPDistribution([hor],[1.0])))
+                    push!(bridge_samples, BridgeSample(state, state, TPDistribution([curr_time+hor],[1.0])))
                 end
             end
         end
@@ -525,4 +527,7 @@ function HHPC.update_context_set!(cmssp::Toy2DCMSSPType, toy2d_context_set::Toy2
     # Now re-assign
     toy2d_context_set.curr_context_set[1] = next_context
     toy2d_context_set.curr_context_set[end] = last_context
+
+    # Finally, update time
+    toy2d_context_set.curr_time = toy2d_context_set.curr_time + 1
 end

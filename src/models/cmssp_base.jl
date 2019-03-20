@@ -144,11 +144,11 @@ mutable struct OpenLoopVertex{D,C,AD}
 end
 
 function OpenLoopVertex(state::CMSSPState{D,C}, action::AD) where {D,C,AD}
-    return OpenLoopVertex(state, state, action, TPDistribution([0],[1.0]))
+    return OpenLoopVertex(state, state, action, TPDistribution([typemax(Int64)],[1.0]))
 end
 
 function OpenLoopVertex{D,C,AD}(state::CMSSPState{D,C}, action::AD) where {D,C,AD}
-    return OpenLoopVertex{D,C,AD}(state, state, action, TPDistribution([0],[1.0]))
+    return OpenLoopVertex{D,C,AD}(state, state, action, TPDistribution([typemax(Int64)t],[1.0]))
 end
 
 function OpenLoopVertex(pre_mode::D, post_mode::D, bridge_sample::BridgeSample{C}, action::AD) where {D,C,AD}
