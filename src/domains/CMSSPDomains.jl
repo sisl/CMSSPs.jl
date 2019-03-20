@@ -35,6 +35,7 @@ export
     Toy2DCMSSPType,
     Toy2DModalMDPType,
     Toy2DContextType,
+    Toy2DContextSet,
     Toy2DSolverType,
     TOY2D_MODES,
     TOY2D_GOAL_CENTRE,

@@ -26,6 +26,12 @@ function GraphTracker(::Type{D}, ::Type{C}, ::Type{AD}, N::Int64, rng::RNG=Rando
                         0,0,Vector{Int64}(undef,0),N,rng)
 end
 
+function GraphTracker{D,C,AD,RNG}(::Type{D}, ::Type{C}, ::Type{AD}, N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
+    return GraphTracker{D,C,AD,RNG}(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
+                        Dict{Tuple{D,D},MVector{2,Int64}}(),
+                        0,0,Vector{Int64}(undef,0),N,rng)
+end
+
 """
 Open loop plan from current state from scratch. Return a graph tracker with solution
 
@@ -40,15 +46,19 @@ Arguments:
 Returns:
     Updates the `graph_tracker` object in place.
 """
-function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C}, 
+function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState, 
                         edge_weight::Function,
                         heuristic::Function,
                         goal_modes::Vector{D},
-                        graph_tracker::GraphTracker{D,C}) where {D,C,AD,AC}
+                        graph_tracker::GraphTracker,
+                        context_set::CS) where {D,CS} 
+
+    # First update the context
+    update_graph_tracker!(D, cmssp, graph_tracker, context_set)
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
-    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(s_t))
+    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex(s_t))
     graph_tracker.curr_start_idx = num_vertices(graph_tracker.curr_graph)
     graph_tracker.curr_goal_idx = 0
 
@@ -58,7 +68,7 @@ function open_loop_plan!(cmssp::CMSSP{D,C,AD,AC}, s_t::CMSSPState{D,C},
     # Obtain path and current cost with A*
     astar_path_soln = astar_light_shortest_path_implicit(graph_tracker.curr_graph, edge_weight,
                                                          graph_tracker.curr_start_idx,
-                                                         GoalVisitorImplicit{D,C,AD,AC}(graph_tracker, cmssp, goal_modes))
+                                                         GoalVisitorImplicit(graph_tracker, cmssp, goal_modes, context_set))
 
     # If unreachable, report warning
     if graph_tracker.curr_goal_idx == 0
@@ -90,7 +100,7 @@ Arguments:
     - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
     - `graph_tracker::GraphTracker{D,C}` The graph_tracker instance to update in place
 """
-function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTracker{D,C}) where {D,C,AD,AC}
+function update_graph_tracker!(::Type{D}, cmssp::CMSSP, graph_tracker::GraphTracker, context_set::CS) where {D,CS}
     
     # Run through mode switch ranges and either retain or remove if context has changed too much
     keys_to_delete = Vector{Tuple{D,D}}(undef,0)
@@ -103,7 +113,7 @@ function update_graph_tracker!(cmssp::CMSSP{D,C,AD,AC}, graph_tracker::GraphTrac
 
         # Copy over subvector of vertices
         range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
-        valid_update = update_vertices_with_context!(cmssp, range_subvector, switch)
+        valid_update = update_vertices_with_context!(cmssp, range_subvector, switch, context_set)
 
         # Delete key if not updated
         if valid_update == false
@@ -121,15 +131,16 @@ end
 """
 The visitor object for the implicit A* search. Attributes obvious.
 """
-struct GoalVisitorImplicit{D,C,AD,AC} <: AbstractDijkstraVisitor
+struct GoalVisitorImplicit{CS} <: AbstractDijkstraVisitor
     graph_tracker::GraphTracker
-    cmssp::CMSSP{D,C,AD,AC}
-    goal_modes::Vector{D}
+    cmssp::CMSSP
+    goal_modes::Vector
+    context_set::CS
 end
 
 
-function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC}, 
-                                u::OpenLoopVertex{D,C,AD}, v::OpenLoopVertex{D,C,AD}, d::Float64, nbrs::Vector{Int64}) where {D,C,AD,AC}
+function Graphs.include_vertex!(vis::GoalVisitorImplicit, 
+                                u::OpenLoopVertex, v::OpenLoopVertex, d::Float64, nbrs::Vector{Int64})
 
     # If popped vertex is terminal, then stop
     if is_terminal(vis.cmssp, v.state) == true
@@ -161,14 +172,14 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
             # Add vertices to graph and to nbrs
             # IMP - Add a default mode-switch action
             for (i,gs) in enumerate(goal_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(gs, vis.cmssp.mode_actions[1]))
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(gs, vis.cmssp.mode_actions[1]))
                 push!(nbrs,range_st+i-1)
             end
         end
     end
 
     # Now add for next modes
-    next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode)
+    next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode, vis.context_set)
 
     for (action,nvm) in next_valid_modes
         # First check if mode switch has them, then just use those
@@ -180,7 +191,8 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
         else
             # Generate bridge samples
             bridge_samples = generate_bridge_sample_set(vis.cmssp, popped_cont, 
-                                                        (popped_mode, nvm), vis.graph_tracker.num_samples, vis.graph_tracker.rng)
+                                                        (popped_mode, nvm), vis.graph_tracker.num_samples, 
+                                                        vis.context_set, vis.graph_tracker.rng)
             @assert length(bridge_samples) > 0
 
             # Update mode switch map range
@@ -190,7 +202,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit{D,C,AD,AC},
 
             # Add vertices to graph and to nbrs
             for (i,bs) in enumerate(bridge_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex{D,C,AD}(popped_mode,nvm,bs,action))
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(popped_mode,nvm,bs,action))
                 push!(nbrs,range_st+i-1)
             end
         end

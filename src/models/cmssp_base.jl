@@ -97,7 +97,7 @@ end
 Returns the integer index of the argument mode from the modes member of the cmssp.
 This is typically required to refer into the mode-switching MDP
 """
-function mode_index(cmssp::CMSSP{D,C,AD,AC}, mode::D) where {D,C,AD,AC}
+function mode_index(cmssp::CMSSP, mode::D) where D
     idx = findfirst(isequal(mode), cmssp.modes)
     @assert idx != nothing "Mode not present in set of modes"
     return idx
@@ -106,7 +106,7 @@ end
 """
 Return the integer index of the mode-switching action relaty
 """
-function mode_actionindex(cmssp::CMSSP{D,C,AD,AC}, mode_action::AD) where {D,C,AD,AC}
+function mode_actionindex(cmssp::CMSSP, mode_action::AD) where {AD}
     idx = findfirst(isequal(mode_action), cmssp.mode_actions)
     @assert idx != nothing "Mode-switch action not present"
     return idx
@@ -143,8 +143,18 @@ mutable struct OpenLoopVertex{D,C,AD}
     tp::TPDistribution
 end
 
+function OpenLoopVertex(state::CMSSPState{D,C}, action::AD) where {D,C,AD}
+    return OpenLoopVertex(state, state, action, TPDistribution([0],[1.0]))
+end
+
 function OpenLoopVertex{D,C,AD}(state::CMSSPState{D,C}, action::AD) where {D,C,AD}
     return OpenLoopVertex{D,C,AD}(state, state, action, TPDistribution([0],[1.0]))
+end
+
+function OpenLoopVertex(pre_mode::D, post_mode::D, bridge_sample::BridgeSample{C}, action::AD) where {D,C,AD}
+    state = CMSSPState(post_mode, bridge_sample.post_bridge_state)
+    pre_bridge_state = CMSSPState(pre_mode, bridge_sample.pre_bridge_state)
+    return OpenLoopVertex(state, pre_bridge_state, action, bridge_sample.tp)
 end
 
 function OpenLoopVertex{D,C,AD}(pre_mode::D, post_mode::D, bridge_sample::BridgeSample{C}, action::AD) where {D,C,AD}

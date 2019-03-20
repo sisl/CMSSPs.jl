@@ -16,22 +16,21 @@ mutable struct HHPCSolver{D,C,AD,AC,CS,P,RNG <: AbstractRNG} <: Solver
     modal_policies::Dict{D,ModalHorizonPolicy}
     modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}
     replan_time_threshold::Int64
-    heuristic::Function
-    max_steps::Int64
     goal_modes::Vector{D}
     curr_state::CMSSPState{D,C}
     curr_context_set::CS
     rng::RNG
+    heuristic::Function
+    max_steps::Int64
 end
 
-function HHPCSolver(::Type{AD}, N::Int64, modal_policies::Dict{D,ModalHorizonPolicy},
+function HHPCSolver(::Type{AD}, num_samples::Int64, modal_policies::Dict{D,ModalHorizonPolicy},
                     modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}, deltaT::Int64, goal_modes::Vector{D},
                     start_state::CMSSPState{D,C}, start_context_set::CS, rng::RNG=Random.GLOBAL_RNG,
                     heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,RNG <: AbstractRNG}
-    return HHPCSolver(GraphTracker(D,C,AD,N,rng),
+    return HHPCSolver(GraphTracker(D,C,AD,num_samples,rng),
                       modal_policies, modal_mdps, deltaT, 
-                      goal_modes, heuristic, max_steps,
-                      start_state, start_context_set, rng)
+                      goal_modes, start_state, start_context_set, rng, heuristic, max_steps)
 end
 
 
@@ -50,8 +49,8 @@ Arguments:
     - `u::OpenLoopVertex{D,C,AD}` The parent vertex
     - `v::OpenLoopVertex{D,C,AD}` The child vertex
 """
-function edge_weight_fn(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC},
-                        u::OpenLoopVertex{D,C,AD}, v::OpenLoopVertex{D,C,AD}) where {D,C,AD,AC}
+function edge_weight_fn(solver::HHPCSolver, cmssp::CMSSP,
+                        u::OpenLoopVertex, v::OpenLoopVertex)
 
     # u's state to v's pre-state should be in a single region
     @assert u.state.mode == v.pre_bridge_state.mode
@@ -99,10 +98,11 @@ end
     AD = modeactiontype(cmssp)
     AC = controlactiontype(cmssp)
     CS = typeof(solver.curr_context_set)
+    PR = typeof(cmssp.params)
 
     @req isterminal(::P, ::S)
-    @req generate_sr(::ModalMDP{D,C,AC}, ::C, ::AC, ::typeof(solver.rng)) # OR transition + reward?
-    @req isterminal(::ModalMDP{D,C,AC}, ::C)
+    @req generate_sr(::ModalMDP{D,C,AC,PR}, ::C, ::AC, ::typeof(solver.rng)) # OR transition + reward?
+    @req isterminal(::ModalMDP{D,C,AC,PR}, ::C)
 
     # Global layer requirements
     @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}}, ::Tuple{D,D}, ::CS)
@@ -112,10 +112,10 @@ end
     
 
     # Local layer requirements
-    @req get_relative_state(::ModalMDP{D,C,AC}, ::C, ::C)
-    @req expected_reward(::ModalMDP{D,C,AC}, ::C, ::AC)
-    @req convert_s(::Type{V} where V <: AbstractVector{Float64},::C,::ModalMDP{D,C,AC})
-    @req convert_s(::Type{C},::V where V <: AbstractVector{Float64},::ModalMDP{D,C,AC})
+    @req get_relative_state(::ModalMDP{D,C,AC,PR}, ::C, ::C)
+    @req expected_reward(::ModalMDP{D,C,AC,PR}, ::C, ::AC)
+    @req convert_s(::Type{V} where V <: AbstractVector{Float64},::C,::ModalMDP{D,C,AC,PR})
+    @req convert_s(::Type{C},::V where V <: AbstractVector{Float64},::ModalMDP{D,C,AC,PR})
 
     # HHPC requirements
     @req simulate_cmssp(::P, ::S, ::A, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
@@ -128,7 +128,7 @@ end
 """
 Executes the top-level behavior of HHPC. Utilizes both global and local layer logic, and interleaving.
 """
-function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) where {D,C,AD,AC}
+function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP)
 
     @warn_requirements solve(solver,cmssp)
 
@@ -147,8 +147,9 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC}, cmssp::CMSSP{D,C,AD,AC}) wh
     while t <= solver.max_steps
 
         if plan == true
-            open_loop_plan!(cmssp, solver.curr_state, solver.curr_context_set, edge_weight_fn,
-                            solver.heuristic, hhpc.goal_modes, hhpc.graph_tracker)
+            @time open_loop_plan!(cmssp, solver.curr_state, solver.curr_context_set, edge_weight_fn,
+                                  solver.heuristic, solver.goal_modes, solver.graph_tracker, solver.curr_context_set)
+            readline()
             last_plan_time = t
             plan = false
         end

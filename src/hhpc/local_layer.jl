@@ -20,6 +20,10 @@ struct ModalAction{AC}
     action_idx::Int64
 end
 
+function ModalStateAugmented(state::C) where {C}
+    return ModalStateAugmented(state, 0)
+end
+
 function ModalStateAugmented{C}(state::C) where {C}
     return ModalStateAugmented{C}(state, 0)
 end
@@ -59,7 +63,7 @@ function ModalMDP{D,C,AC,P}(mode::D, params::P) where {D,C,AC,P}
 end
 
 
-function set_horizon_limit!(mdp::ModalMDP{D,C,AC}, h::Int64) where {D,C,AC}
+function set_horizon_limit!(mdp::ModalMDP, h::Int64) where {D,C,AC}
     mdp.horizon_limit = h
     mdp.min_value_per_horizon = Inf*ones(h)
 end
@@ -75,8 +79,8 @@ POMDPs.actionindex(mdp::ModalMDP, a::ModalAction) = a.action_idx
 Convert augmented state to a vector by calling the underlying convert_s function
 for non-augmented state. IMPORTANT: The underlying dynamics should be for RELATIVE STATE
 """
-function POMDPs.convert_s(::Type{V}, s::ModalStateAugmented{C}, 
-                          mdp::ModalMDP{D,C,AC}) where {D,C,AC,V <: AbstractVector{Float64}}
+function POMDPs.convert_s(::Type{V}, s::ModalStateAugmented, 
+                          mdp::ModalMDP) where {V <: AbstractVector{Float64}}
     v = convert_s(Vector{Float64}, s.relative_state, mdp)
     push!(v, convert(Float64, s.horizon))
     return v
@@ -86,7 +90,7 @@ end
 Convert horizon-augmented vector to ModalStateAugmented
 """
 function POMDPs.convert_s(::Type{ModalStateAugmented{C}}, v::AbstractVector{Float64},
-                          mdp::ModalMDP{D,C,AC}) where {D,C,AC}
+                          mdp::ModalMDP) where {C}
     state = convert_s(C, v, mdp)
     horizon = convert(Int64,v[end])
     s = ModalStateAugmented{C}(state,horizon)
@@ -94,8 +98,8 @@ function POMDPs.convert_s(::Type{ModalStateAugmented{C}}, v::AbstractVector{Floa
 end
 
 
-function POMDPs.generate_sr(mdp::ModalMDP{D,C,AC}, s::ModalStateAugmented{C}, a::ModalAction{AC}, 
-                            rng::RNG=Random.GLOBAL_RNG) where {D,C,AC,RNG <: AbstractRNG}
+function POMDPs.generate_sr(mdp::ModalMDP, s::ModalStateAugmented, a::ModalAction, 
+                            rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
     # Get next state and underlying cost for dynamics
     # TODO : This should be the same regardless of relative or absolute state
@@ -115,7 +119,7 @@ function POMDPs.generate_sr(mdp::ModalMDP{D,C,AC}, s::ModalStateAugmented{C}, a:
     return ModalStateAugmented(sp, s.horizon-1), -cost
 end
 
-function POMDPs.isterminal(mdp::ModalMDP{D,C,AC}, s::ModalStateAugmented{C}) where {D,C,AC}
+function POMDPs.isterminal(mdp::ModalMDP, s::ModalStateAugmented)
     return s.horizon == 0
 end
 
@@ -130,8 +134,8 @@ Arguments:
     - `mode::D`
     - `lfa::LFA` A LocalFunctionApproximator object for the value iteration
 """
-function compute_terminalcost_localapprox!(mdp::ModalMDP{D,C,AC}, cmssp::CMSSP{D,C,AD,AC}, mode::D,
-                                          lfa::LFA) where {D,C,AD,AC,LFA <: LocalFunctionApproximator}
+function compute_terminalcost_localapprox!(mdp::ModalMDP{D,C,AC,P}, cmssp::CMSSP, mode::D,
+                                          lfa::LFA) where {D,C,AD,AC,P,LFA <: LocalFunctionApproximator}
     max_contr_cost = 0.0
     max_switch_cost = 0.0
 
@@ -159,9 +163,9 @@ Arguments:
     - `n_generative_samples::Int64`
     - `rng::RNG`
 """
-function finite_horizon_VI_localapprox!(mdp::ModalMDP{D,C,AC}, lfa::LFA,
+function finite_horizon_VI_localapprox!(mdp::ModalMDP, lfa::LFA,
                                        is_mdp_generative::Bool=false, n_generative_samples::Int64=0,
-                                       rng::RNG=Random.GLOBAL_RNG) where {D,C,AC,RNG <: AbstractRNG,LFA<:LocalFunctionApproximator}
+                                       rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG,LFA<:LocalFunctionApproximator}
 
     # Setup an out-horizon-approximator
     # Terminal costs are 0 in this case
@@ -208,7 +212,7 @@ Arguments:
     - `mdp::ModalMDP{D,C,AC}`
     - `modal_policy::ModalHorizonPolicy{P}`
 """
-function compute_min_value_per_horizon_localapprox!(modal_policy::ModalHorizonPolicy{P}) where {D,C,AC,P}
+function compute_min_value_per_horizon_localapprox!(modal_policy::ModalHorizonPolicy)
 
     # Access the underlying value function approximator
     all_interp_values_inhor = get_all_interpolating_values(modal_policy.in_horizon_policy.interp)
@@ -241,8 +245,8 @@ Arguments:
     - `curr_state::C`
     - `target_state::C`
 """
-function horizon_weighted_value(modal_policy::ModalHorizonPolicy{P}, curr_timestep::Int64,
-                                tp_dist::TPDistribution, curr_state::C, target_state::C) where {D,C,AC,P}
+function horizon_weighted_value(modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
+                                tp_dist::TPDistribution, curr_state::C, target_state::C) where C
 
     weighted_value = 0.0
     weighted_minvalue = 0.0
@@ -287,8 +291,8 @@ Arguments:
     - `target_state::C`
     - `a::ModalAction{AC}`
 """
-function horizon_weighted_actionvalue(modal_policy::ModalHorizonPolicy{P}, curr_timestep::Int64,
-                                tp_dist::TPDistribution, curr_state::C, target_state::C, a::ModalAction{AC}) where {D,C,AC,P}
+function horizon_weighted_actionvalue(modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
+                                tp_dist::TPDistribution, curr_state::C, target_state::C, a::ModalAction{AC}) where {C,AC}
 
     total_value = 0.0
 
@@ -325,8 +329,8 @@ Arguments:
     - `curr_state::C`
     - `target_state::C`
 """
-function get_best_intramodal_action(modal_policy::ModalHorizonPolicy{P}, curr_timestep::Int64,
-                               tp_dist::TPDistribution, curr_state::C, target_state::C) where {D,C,AC,P}
+function get_best_intramodal_action(modal_policy::ModalHorizonPolicy, curr_timestep::Int64,
+                               tp_dist::TPDistribution, curr_state::C, target_state::C) where C
 
     mdp = modal_policy.in_horizon_policy.mdp
 
