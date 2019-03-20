@@ -15,19 +15,15 @@ mutable struct GraphTracker{D,C,AD,RNG <: AbstractRNG}
     mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
     curr_start_idx::Int64
     curr_goal_idx::Int64
-    curr_soln_path_idxs::Vector{Int}
+    curr_soln_path_idxs::Vector{Int64}
     num_samples::Int64
     rng::RNG
 end
 
-function GraphTracker{D,C,AD}(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
-    return GraphTracker{D,C}(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
+function GraphTracker(::Type{D}, ::Type{C}, ::Type{AD}, N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
+    return GraphTracker(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
                         Dict{Tuple{D,D},MVector{2,Int64}}(),
-                        0,
-                        0,
-                        Vector{Int64}(undef,0),
-                        N,
-                        rng)
+                        0,0,Vector{Int64}(undef,0),N,rng)
 end
 
 """

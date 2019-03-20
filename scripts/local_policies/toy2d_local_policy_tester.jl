@@ -11,37 +11,31 @@ using LocalFunctionApproximation
 using LocalApproximationValueIteration
 using CMSSPs
 
-const SPEED_LIMIT = 0.075
-const SPEED_VALS = 11
-const EPSILON = 0.02
-const N_GEN_SAMPLES = 10
-const NUM_BRIDGE_SAMPLES = 20
-const HORIZON_LIMIT = 20
-
-
-inhor_file = "toy2d-grid1-inhor.jld2"
-outhor_file = "toy2d-grid1-outhor.jld2"
+inhor_file = ARGS[1]
+outhor_file = ARGS[2]
+params_fn = ARGS[3]
 trials = 5
 
-rng = MersenneTwister(27)
+rng = MersenneTwister(9810)
 
 modal_horizon_policy = load_modal_horizon_policy_localapprox(inhor_file, outhor_file)
 
 # Create parameters and then CMSSP
-params = Toy2DParameters(SPEED_LIMIT, SPEED_VALS, EPSILON, N_GEN_SAMPLES, NUM_BRIDGE_SAMPLES)
+params = toy2d_parse_params(params_fn)
 cmssp = create_toy2d_cmssp(params)
-mdp = Toy2DModalMDPType(1, cmssp.control_actions, 1.0, HORIZON_LIMIT)
 
-POMDPs.isterminal(mdp::Toy2DModalMDPType,state::Toy2DContState) = CMSSPs.CMSSPDomains.isterminal(mdp,state,params)
+# Set up the modal mdp
+# Need to do it for just one mode
+modal_mdp = Toy2DModalMDPType(1, params, cmssp.control_actions, 0.8, params.horizon_limit)
 
 for i = 1:trials
 
     tot_cost = 0.0
 
-    start_horizon = convert(Int64,rand(HORIZON_LIMIT/2:HORIZON_LIMIT))
+    start_horizon = convert(Int64,rand(params.horizon_limit/2:params.horizon_limit))
     target_state = sample_toy2d(rng)
     curr_state = Toy2DContState(0.0,0.0)
-    tp_dist = TPDistribution([start_horizon],[1.0])
+    tp_dist = TPDistribution([start_horizon],[1.0]) 
 
     @show target_state, start_horizon
 
@@ -51,14 +45,14 @@ for i = 1:trials
             println("ABORT!")
             break
         end
-        (new_state, reward) = generate_sr(mdp, curr_state, a.action, rng)
+        (new_state, reward) = generate_sr(modal_mdp, curr_state, a.action, rng)
         curr_state = new_state
         tot_cost += -1.0*reward
     end
 
-    @show CMSSPs.CMSSPDomains.norm(CMSSPs.CMSSPDomains.get_relative_state(curr_state,target_state))
+    @show CMSSPs.CMSSPDomains.norm(CMSSPs.CMSSPDomains.get_relative_state(modal_mdp,curr_state,target_state))
 
-    if POMDPs.isterminal(mdp, CMSSPs.CMSSPDomains.get_relative_state(curr_state,target_state))
+    if isterminal(modal_mdp, CMSSPs.CMSSPDomains.get_relative_state(modal_mdp,curr_state,target_state))
         @show "Success!"
     else
         @show "Failure!"

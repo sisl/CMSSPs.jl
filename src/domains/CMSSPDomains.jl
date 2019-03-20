@@ -17,6 +17,9 @@ using POMDPModels
 using POMDPPolicies
 using POMDPSimulators
 
+# For reading params
+using TOML
+
 # CMSSPs submodule
 using CMSSPs.CMSSPModel
 using CMSSPs.HHPC
@@ -32,24 +35,31 @@ export
     Toy2DCMSSPType,
     Toy2DModalMDPType,
     Toy2DContextType,
+    Toy2DSolverType,
     TOY2D_MODES,
     TOY2D_GOAL_CENTRE,
     TOY2D_GOAL_MODE,
     create_toy2d_cmssp,
-    isterminal,
-    sample_toy2d
+    sample_toy2d,
+    toy2d_parse_params,
+    generate_start_state,
+    generate_start_context_set
+    
 
 
 # General required exports
 export
-    get_relative_state,
+    # Local
     expected_reward,
-    startstate_context,
+    get_relative_state,
+    # Global
     update_vertices_with_context!,
     generate_goal_sample_set,
     generate_next_valid_modes,
     generate_bridge_sample_set,
-    simulate
+    # HHPC
+    simulate_cmssp,
+    update_contextset!
 
 
 include("toy_2d.jl")

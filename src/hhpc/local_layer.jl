@@ -37,7 +37,7 @@ Attributes:
     - `terminal_cost_penalty::Float64` The phi_CF value
     - `terminal_costs_set::Bool` Flag used for out-horizon vs in-horizon VI
 """
-mutable struct ModalMDP{D,C,AC} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction{AC}}
+mutable struct ModalMDP{D,C,AC,P} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction{AC}}
     mode::D
     actions::Vector{ModalAction{AC}}
     beta_threshold::Float64
@@ -45,16 +45,17 @@ mutable struct ModalMDP{D,C,AC} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction
     min_value_per_horizon::Vector{Float64}
     terminal_cost_penalty::Float64
     terminal_costs_set::Bool
+    params::P
 end
 
 
-function ModalMDP{D,C,AC}(mode::D, actions::Vector{AC}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AC}
+function ModalMDP{D,C,AC,P}(mode::D, params::P, actions::Vector{AC}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AC,P}
     modal_actions = [ModalAction(a,i) for (i,a) in enumerate(actions)]
-    return ModalMDP{D,C,AC}(mode, modal_actions, beta, horizon_limit, Inf*ones(horizon_limit), Inf, false)
+    return ModalMDP{D,C,AC,P}(mode, modal_actions, beta, horizon_limit, Inf*ones(horizon_limit), Inf, false, params)
 end
 
-function ModalMDP{D,C,AC}(mode::D) where {D,C,AC}
-    return ModalMDP{D,C,AC}(mode,Vector{ModalAction{AC}}(undef,0))
+function ModalMDP{D,C,AC,P}(mode::D, params::P) where {D,C,AC,P}
+    return ModalMDP{D,C,AC,P}(mode, params, Vector{ModalAction{AC}}(undef,0))
 end
 
 
@@ -145,24 +146,7 @@ function compute_terminalcost_localapprox!(mdp::ModalMDP{D,C,AC}, cmssp::CMSSP{D
             end
         end
     end
-    max_contr_cost = max_contr_cost * mdp.horizon_limit
-
-    mode_idx = mode_index(cmssp, mode)
-
-    @info "Getting max switch cost"
-    # now iterate over discrete actions and get out-of-mode costs
-    for (ac_idx,action) in enumerate(cmssp.mode_actions)
-        for (next_mode_idx,_mode) in enumerate(cmssp.modes)
-            if cmssp.modeswitch_mdp.T[mode_idx, ac_idx, next_mode_idx] > 0.0
-                cost = -1.0*cmssp.modeswitch_mdp.R[mode_idx, ac_idx]
-                if cost > max_switch_cost
-                    max_switch_cost = cost
-                end
-            end
-        end
-    end
-
-    mdp.terminal_cost_penalty = max_contr_cost + max_switch_cost
+    mdp.terminal_cost_penalty = max_contr_cost * mdp.horizon_limit
 end
 
 """

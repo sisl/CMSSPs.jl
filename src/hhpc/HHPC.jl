@@ -55,9 +55,7 @@ export
 # ensure that mode-switch MDP available?
 export
     HHPCSolver,
-    solve
-
-
+    set_start_state_context_set!
 
 # Utils
 export
@@ -68,13 +66,32 @@ export
     log2space_symmetric,
     polyspace_symmetric
 
+# General functions that need to be implemented
 export
+    # Local
     expected_reward,
-    get_relative_state
+    get_relative_state,
+    # Global
+    update_vertices_with_context!,
+    generate_goal_sample_set,
+    generate_next_valid_modes,
+    generate_bridge_sample_set,
+    # HHPC
+    simulate_cmssp,
+    update_context_set!
 
-
-function expected_reward end
+# Local reqs
 function get_relative_state end
+function expected_reward end
+# Global reqs
+function update_vertices_with_context! end
+function generate_goal_sample_set end
+function generate_next_valid_modes end
+function generate_bridge_sample_set end
+# HHPC reqs
+function simulate_cmssp end
+function update_context_set! end
+
 
 include("global_layer.jl")
 include("local_layer.jl")
