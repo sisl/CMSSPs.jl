@@ -39,6 +39,10 @@ function set_start_state_context_set!(solver::HHPCSolver, start_state::CMSSPStat
     solver.curr_context_set = start_context_set
 end
 
+function set_open_loop_samples(solver::HHPCSolver, num_samples::Int64)
+    solver.graph_tracker.num_samples = num_samples
+end
+
 
 """
 Creates the weight function for the edges, used by the global layer graph search.
@@ -54,19 +58,25 @@ function edge_weight_fn(solver::HHPCSolver, cmssp::CMSSP,
 
     # u's state to v's pre-state should be in a single region
     @assert u.state.mode == v.pre_bridge_state.mode
+    #     println("u.state.mode != v.pre_bridge_state.mode")
+    #     @show u,v
+    #     readline()
+    # end
 
     # We care about relative tp_dist between u and v
     # If inf, have modal policy overload it!
     mode = u.state.mode
-    mdp = solver.modal_mdps[mode]
+    policy = solver.modal_policies[mode]
+    mdp = policy.in_horizon_policy.mdp
     temp_curr_time = convert(Int64,round(mean(u.tp)))
-    weighted_value, weighted_minvalue = horizon_weighted_value(
-                                            mdp,
-                                            solver.modal_policies[mode],
+    weighted_value, weighted_minvalue = horizon_weighted_value(policy,
                                             temp_curr_time,
                                             v.tp,
                                             u.state.continuous,
                                             v.pre_bridge_state.continuous)
+    # @show u,v
+    # @show weighted_value, weighted_minvalue
+    # readline()
 
     # TODO : Verify that this works
     # Filter out edges that nominally would trigger an interrupt
@@ -78,8 +88,8 @@ function edge_weight_fn(solver::HHPCSolver, cmssp::CMSSP,
 
     # Also add the cost due to the assumed mode switch
     if v.pre_bridge_state.mode != v.state.mode
-        ac_idx = mode_actionindex(v.bridging_action)
-        mode_idx = mode_index(v.pre_bridge_state.mode)
+        ac_idx = mode_actionindex(cmssp,v.bridging_action)
+        mode_idx = mode_index(cmssp,v.pre_bridge_state.mode)
         edge_weight += -1.0*cmssp.modeswitch_mdp.R[mode_idx,ac_idx]
     end
 
@@ -128,7 +138,7 @@ end
 """
 Executes the top-level behavior of HHPC. Utilizes both global and local layer logic, and interleaving.
 """
-function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP)
+function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,AD,AC,P}
 
     @warn_requirements solve(solver,cmssp)
 
@@ -138,61 +148,84 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP)
     last_plan_time = 0
 
     # Defs needed for open-loop-plan
-    edge_weight_fn(u,v) = edge_weight_fn(solver, cmssp, u, v)
+    edge_weight(u::OpenLoopVertex,v::OpenLoopVertex) = edge_weight_fn(solver, cmssp, u, v)
 
     # Diagnostic info
     total_cost = 0.0
     successful = false
 
+
     while t <= solver.max_steps
 
+        @show solver.curr_state
+        @show t
+
         if plan == true
-            @time open_loop_plan!(cmssp, solver.curr_state, solver.curr_context_set, edge_weight_fn,
-                                  solver.heuristic, solver.goal_modes, solver.graph_tracker, solver.curr_context_set)
+            println("Open loop plan!")
+            @time open_loop_plan!(cmssp, solver.curr_state, t, edge_weight, solver.heuristic,
+                                  solver.goal_modes, solver.graph_tracker, solver.curr_context_set)
             readline()
             last_plan_time = t
             plan = false
         end
 
         # now do work for macro-actions 
-        next_target = plan[2] # Second vertex in full plan
+        next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]] # Second vertex in full plan
+        @show next_target
 
         # Check if 'terminal' state as per modal MDP
-        @assert curr_state.mode == next_target.pre_bridge_state.mode
-        relative_state = get_relative_state(curr_state.continuous, next_target.pre_bridge_state.continuous)
+        @assert solver.curr_state.mode == next_target.pre_bridge_state.mode
+        relative_state = get_relative_state(solver.modal_mdps[solver.curr_state.mode], solver.curr_state.continuous, next_target.pre_bridge_state.continuous)
+        relative_time = mean(next_target.tp) - t
+        # @show relative_time
 
-        if POMDPs.isterminal(solver.modal_mdps[curr_state.mode], relative_state)
+        if relative_time < 0.5 
             # TODO: Guaranteed to not be truly terminal state
             # Action is just the bridging action
             curr_action = next_target.bridging_action
         else
-            curr_action = get_best_intramodal_action(solver.modal_mdps[curr_state.mode], 
-                                                     solver.modal_policies[curr_state.mode], 
+            # Assuming finite horizon now - handle internally
+            curr_action = get_best_intramodal_action(solver.modal_policies[solver.curr_state.mode], 
                                                      t,
                                                      next_target.tp, 
-                                                     curr_state.continuous, 
+                                                     solver.curr_state.continuous, 
                                                      next_target.pre_bridge_state.continuous)
+            # end
+            curr_action = curr_action.action
         end
+
+        @show curr_action
+        readline()
+
+        temp_full_action = CMSSPAction{AD,AC}(curr_action, 1)
 
         # If curr_action = NOTHING, means interrupt
         # So simulator should handle NOTHING
         # Will typically be bound to other environment variables
-        (new_state, new_context, reward, failed_mode_switch) = simulate_cmssp(cmssp, curr_state, curr_action, t, solver.curr_context_set, solver.rng)
+        update_context_set!(cmssp, solver.curr_context_set,solver.rng)
+        (new_state, reward, failed_mode_switch) = simulate_cmssp(cmssp, solver.curr_state, temp_full_action, t, solver.curr_context_set, solver.rng)
         t = t+1
         total_cost += -1.0*reward
 
-        # Update current state and context
-        solver.curr_state = new_state
-        update_context_set!(cmssp, solver.curr_context_set,solver.rng)
+        @show new_state
 
-        # Check terminal conditions
-        if POMDPs.isterminal(cmssp, curr_state)
-            successful = true
-            break
+        # RCH hack - reset to 0 at every mode change
+        if new_state.mode != solver.curr_state.mode
+            inf_hor_rch = 0
         end
 
-        if curr_action == nothing || failed_mode_switch || t - last_plan_time > solver.replan_time_threshold
+        if curr_action == nothing || failed_mode_switch || t - last_plan_time > solver.replan_time_threshold ||
+            new_state.mode != solver.curr_state.mode
             plan = true
+        end
+
+        # Update current state and context
+        solver.curr_state = new_state
+
+        # Check terminal conditions
+        if POMDPs.isterminal(cmssp, solver.curr_state)
+            successful = true
+            break
         end
     end
 

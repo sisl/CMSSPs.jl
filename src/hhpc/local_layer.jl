@@ -15,17 +15,17 @@ struct ModalStateAugmented{C}
     horizon::Int64
 end
 
-struct ModalAction{AC}
-    action::AC
-    action_idx::Int64
-end
-
 function ModalStateAugmented(state::C) where {C}
     return ModalStateAugmented(state, 0)
 end
 
 function ModalStateAugmented{C}(state::C) where {C}
     return ModalStateAugmented{C}(state, 0)
+end
+
+struct ModalAction{AC}
+    action::AC
+    action_idx::Int64
 end
 
 
@@ -55,6 +55,10 @@ end
 
 function ModalMDP{D,C,AC,P}(mode::D, params::P, actions::Vector{AC}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AC,P}
     modal_actions = [ModalAction(a,i) for (i,a) in enumerate(actions)]
+    return ModalMDP{D,C,AC,P}(mode, modal_actions, beta, horizon_limit, Inf*ones(horizon_limit), Inf, false, params)
+end
+
+function ModalMDP{D,C,AC,P}(mode::D, params::P, modal_actions::Vector{ModalAction{AC}}, beta::Float64=1.0, horizon_limit::Int64=0) where {D,C,AC,P}
     return ModalMDP{D,C,AC,P}(mode, modal_actions, beta, horizon_limit, Inf*ones(horizon_limit), Inf, false, params)
 end
 
@@ -135,7 +139,7 @@ Arguments:
     - `lfa::LFA` A LocalFunctionApproximator object for the value iteration
 """
 function compute_terminalcost_localapprox!(mdp::ModalMDP{D,C,AC,P}, cmssp::CMSSP, mode::D,
-                                          lfa::LFA) where {D,C,AD,AC,P,LFA <: LocalFunctionApproximator}
+                                          lfa::LFA) where {D,C,AC,P,LFA <: LocalFunctionApproximator}
     max_contr_cost = 0.0
     max_switch_cost = 0.0
 
@@ -355,3 +359,28 @@ function get_best_intramodal_action(modal_policy::ModalHorizonPolicy, curr_times
 
     return best_action
 end
+
+
+# function get_best_intramodal_action_infhor(modal_policy::ModalHorizonPolicy, curr_rch_value::Int64,
+#                                            curr_state::C, target_state::C) where C
+
+#     mdp = modal_policy.in_horizon_policy.mdp
+
+#     if curr_rch_value == 0
+#         curr_rch_value = mdp.horizon_limit-1
+#     end
+#     temp_tp_dist = TPDistribution([curr_rch_value], [1.0])
+
+#     best_action = mdp.actions[1]
+#     best_action_val = -Inf
+
+#     for a in mdp.actions
+#         action_val = horizon_weighted_actionvalue(modal_policy, 0, temp_tp_dist, curr_state, target_state, a)
+#         if action_val > best_action_val
+#             best_action_val = action_val
+#             best_action = a
+#         end
+#     end
+
+#     return (best_action, curr_rch_value-1)
+# end
