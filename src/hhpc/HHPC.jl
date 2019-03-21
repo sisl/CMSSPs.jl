@@ -55,7 +55,8 @@ export
 # ensure that mode-switch MDP available?
 export
     HHPCSolver,
-    set_start_state_context_set!
+    set_start_state_context_set!,
+    set_open_loop_samples
 
 # Utils
 export
@@ -78,7 +79,8 @@ export
     generate_bridge_sample_set,
     # HHPC
     simulate_cmssp,
-    update_context_set!
+    update_context_set!,
+    display_context_future
 
 # Local reqs
 function get_relative_state end
@@ -91,6 +93,7 @@ function generate_bridge_sample_set end
 # HHPC reqs
 function simulate_cmssp end
 function update_context_set! end
+function display_context_future end
 
 
 include("global_layer.jl")
