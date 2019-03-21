@@ -37,6 +37,7 @@ export
     get_control_actions,
     set_modeswitch_mdp!,
     mode_index,
+    mode_actionindex,
     TPDistribution,
     BridgeSample,
     OpenLoopVertex
