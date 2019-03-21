@@ -15,7 +15,7 @@ inhor_file = "../local_policies/toy2d-inhor-1.jld2"
 outhor_file = "../local_policies/toy2d-outhor-1.jld2"
 params_fn = "../paramsets/toy2d-params1.toml"
 
-const TRIALS = 1
+const TRIALS = 5
 
 rng = MersenneTwister(1234)
 
@@ -26,11 +26,6 @@ modal_horizon_policy = load_modal_horizon_policy_localapprox(inhor_file, outhor_
 params = toy2d_parse_params(params_fn)
 cmssp = create_toy2d_cmssp(params)
 
-
-@info "Generating start state and context"
-# Get start state and context
-start_state = generate_start_state(cmssp, rng)
-start_context = generate_start_context_set(cmssp, rng)
 
 # Create reqments for solver by loading modal policies and modal MDPs etc
 modal_policies = Dict{Int64,ModalHorizonPolicy}()
@@ -46,7 +41,17 @@ end
 deltaT = 5
 goal_modes = [TOY2D_GOAL_MODE]
 
-@info "Creating solver"
-toy2d_solver = HHPCSolver(Int64, params.num_bridge_samples, modal_policies,
-                               modal_mdps, deltaT, goal_modes,
-                               start_state, start_context, rng)
+for trial = 1:TRIALS
+    @info "Generating start state and context"
+    # Get start state and context
+    start_state = generate_start_state(cmssp, rng)
+    start_context = generate_start_context_set(cmssp, rng)
+
+    
+
+    @info "Creating solver"
+    toy2d_solver = HHPCSolver(Int64, params.num_bridge_samples, modal_policies,
+                                   modal_mdps, deltaT, goal_modes,
+                                   start_state, start_context, rng)
+    solve(toy2d_solver, cmssp)
+end
