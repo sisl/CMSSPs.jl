@@ -46,19 +46,20 @@ Arguments:
 Returns:
     Updates the `graph_tracker` object in place.
 """
-function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState, 
-                        edge_weight::Function,
-                        heuristic::Function,
-                        goal_modes::Vector{D},
-                        graph_tracker::GraphTracker,
-                        context_set::CS) where {D,CS} 
+function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
+                         curr_time::Int64,
+                         edge_weight::Function,
+                         heuristic::Function,
+                         goal_modes::Vector{D},
+                         graph_tracker::GraphTracker,
+                         context_set::CS) where {D,CS} 
 
     # First update the context
     update_graph_tracker!(D, cmssp, graph_tracker, context_set)
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
-    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex(s_t))
+    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex(s_t,cmssp.mode_actions[1],TPDistribution([curr_time],[1.0])))
     graph_tracker.curr_start_idx = num_vertices(graph_tracker.curr_graph)
     graph_tracker.curr_goal_idx = 0
 
@@ -79,18 +80,25 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
     # Check that goal state is indeed terminal
     # And that A* has non-Inf cost path to it
     @assert astar_path_soln.dists[graph_tracker.curr_goal_idx] < Inf "Path to goal is Inf cost!"
-    @assert is_terminal(cmssp, graph_tracker.vertices[graph_tracker.curr_goal_idx].state) == true "Goal state is not terminal!"
 
     ## Walk path back to goal
     # Insert goal in soln vector
     pushfirst!(graph_tracker.curr_soln_path_idxs, graph_tracker.curr_goal_idx)
-    curr_vertex_idx = curr_goal_idx
+    curr_vertex_idx = graph_tracker.curr_goal_idx
 
     while curr_vertex_idx != graph_tracker.curr_start_idx
         prev_vertex_idx = astar_path_soln.parent_indices[curr_vertex_idx]
         pushfirst!(graph_tracker.curr_soln_path_idxs, prev_vertex_idx)
         curr_vertex_idx = prev_vertex_idx
     end
+    # @show graph_tracker.curr_soln_path_idxs
+    # for idx in graph_tracker.curr_soln_path_idxs
+    #     println(graph_tracker.curr_graph.vertices[idx].state," at ",graph_tracker.curr_graph.vertices[idx].tp)
+    #     hor_val = graph_tracker.curr_graph.vertices[idx].tp.vals[1]
+    #     if hor_val < typemax(Int64)
+    #         display_context_future(context_set,hor_val)
+    #     end
+    # end
 end
 
 """
@@ -123,7 +131,7 @@ function update_graph_tracker!(::Type{D}, cmssp::CMSSP, graph_tracker::GraphTrac
 
     # Iterate over keys_to_delete and delete those that are not updated
     for ktd in keys_to_delete
-        delete(graph_tracker.mode_switch_idx_range, ktd)
+        delete!(graph_tracker.mode_switch_idx_range, ktd)
     end
 end
 
@@ -142,8 +150,9 @@ end
 function Graphs.include_vertex!(vis::GoalVisitorImplicit, 
                                 u::OpenLoopVertex, v::OpenLoopVertex, d::Float64, nbrs::Vector{Int64})
 
+    # @show v
     # If popped vertex is terminal, then stop
-    if is_terminal(vis.cmssp, v.state) == true
+    if isterminal(vis.cmssp, v.state) == true
         vis.graph_tracker.curr_goal_idx = vertex_index(vis.graph_tracker.curr_graph, v)
         return false
     end
@@ -154,26 +163,26 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # If goal mode but NOT goal state, add samples from goal
     if popped_mode in vis.goal_modes
         # If leftover from previous step, just re-add those
-        if haskey(vis.mode_switch_idx_range,(popped_mode,popped_mode))
-            mode_switch_range = vis.mode_switch_idx_range[(popped_mode,popped_mode)]
+        if haskey(vis.graph_tracker.mode_switch_idx_range,(popped_mode,popped_mode))
+            mode_switch_range = vis.graph_tracker.mode_switch_idx_range[(popped_mode,popped_mode)]
             for nbr_idx = mode_switch_range[1] : mode_switch_range[2]
                 push!(nbrs, nbr_idx)
             end
         else
             # Generate goal sample set
             goal_samples = generate_goal_sample_set(vis.cmssp, popped_cont, vis.graph_tracker.num_samples, vis.graph_tracker.rng)
-            @assert length(goal_samples) > 0
-
-            # Update mode switch map range
-            range_st = num_vertices(vis.graph_tracker.curr_graph)+1
-            range_end = range_st + length(goal_samples)
-            vis.graph_tracker.mode_switch_idx_range[(popped_mode,popped_mode)] = MVector{2,Int64}(range_st, range_end)
-            
-            # Add vertices to graph and to nbrs
-            # IMP - Add a default mode-switch action
-            for (i,gs) in enumerate(goal_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(gs, vis.cmssp.mode_actions[1]))
-                push!(nbrs,range_st+i-1)
+            if length(goal_samples) > 0
+                # Update mode switch map range
+                range_st = num_vertices(vis.graph_tracker.curr_graph)+1
+                range_end = range_st + length(goal_samples)-1
+                vis.graph_tracker.mode_switch_idx_range[(popped_mode,popped_mode)] = MVector{2,Int64}(range_st, range_end)
+                
+                # Add vertices to graph and to nbrs
+                # IMP - Add a default mode-switch action
+                for (i,gs) in enumerate(goal_samples)
+                    add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(gs, vis.cmssp.mode_actions[1]))
+                    push!(nbrs,range_st+i-1)
+                end
             end
         end
     end
@@ -181,10 +190,13 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # Now add for next modes
     next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode, vis.context_set)
 
+    # @show next_valid_modes
+    # @show vis.graph_tracker.mode_switch_idx_range
+
     for (action,nvm) in next_valid_modes
         # First check if mode switch has them, then just use those
-        if haskey(vis.mode_switch_idx_range,(popped_mode,nvm))
-            mode_switch_range = vis.mode_switch_idx_range[(popped_mode,nvm)]
+        if haskey(vis.graph_tracker.mode_switch_idx_range,(popped_mode,nvm))
+            mode_switch_range = vis.graph_tracker.mode_switch_idx_range[(popped_mode,nvm)]
             for nbr_idx = mode_switch_range[1] : mode_switch_range[2]
                 push!(nbrs, nbr_idx)
             end
@@ -197,7 +209,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
 
             # Update mode switch map range
             range_st = num_vertices(vis.graph_tracker.curr_graph)+1
-            range_end = range_st + length(bridge_samples)
+            range_end = range_st + length(bridge_samples)-1
             vis.graph_tracker.mode_switch_idx_range[(popped_mode,nvm)] = MVector{2,Int64}(range_st, range_end)
 
             # Add vertices to graph and to nbrs
@@ -207,6 +219,9 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
             end
         end
     end
+
+    #@show nbrs
+    # readline()
 
     return true
 
