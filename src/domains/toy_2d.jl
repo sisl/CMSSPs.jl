@@ -20,6 +20,7 @@ struct Toy2DParameters
     horizon_limit::Int64
     axis_vals::Int64
     valid_vertices_threshold::Float64
+    time_coefficient::Float64
 end
 
 # Const types
@@ -34,7 +35,6 @@ const Toy2DContextType = Vector{Tuple{Toy2DModePair,Toy2DContState}}
 
 # Const values
 const TOY2D_MODES = [1,2,3,4,5]
-const TOY2D_GOAL_CENTRE = Toy2DContState(0.5,0.5)
 const TOY2D_GOAL_MODE = 5
 const TOY2D_QUADRANTS = [(0.0,pi/2), (pi/2,pi), (pi,3*pi/2), (3*pi/2,2*pi)]
 
@@ -93,10 +93,10 @@ function get_toy2d_switch_mdp()
     R = zeros(5,2)
     R[1,1] = -1.0 # For T[1,1,2]
     R[1,2] = -2.0 # For T[1,2,3]
-    R[2,1] = -8.0
+    R[2,1] = -10.0
     R[3,1] = -2.0
-    R[3,2] = -2.0
-    R[4,1] = -3.0
+    R[3,2] = -8.0
+    R[4,1] = -1.0
 
     # Undiscounted
     return TabularMDP(T, R, 1.0)
@@ -120,8 +120,7 @@ function POMDPs.isterminal(mdp::Toy2DModalMDPType, relative_state::Toy2DContStat
 end
 
 function POMDPs.isterminal(cmssp::Toy2DCMSSPType, state::Toy2DStateType)
-    return state.mode == TOY2D_GOAL_MODE && 
-           norm(rel_state(state,TOY2D_GOAL_CENTRE)) < cmssp.params.epsilon
+    return state.mode == TOY2D_GOAL_MODE
 end
 
 function rel_state(source::Toy2DContState, target::Toy2DContState)
@@ -163,7 +162,7 @@ end
 function POMDPs.reward(mdp::Toy2DModalMDPType, state::Toy2DContState,
                        cont_action::Toy2DContAction, statep::Toy2DContState)
     delta_state = Toy2DContState(statep.x - state.x, statep.y - state.y)
-    reward = -1.0*(norm(delta_state))
+    reward = -1.0*(norm(delta_state)) - mdp.params.time_coefficient
     return reward  
 end
 
@@ -280,15 +279,16 @@ end
 function HHPC.generate_goal_sample_set(cmssp::Toy2DCMSSPType, popped_cont::Toy2DContState,
                                   num_samples::Int64, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
-    params = cmssp.params
-    goal_samples = Vector{Toy2DStateType}(undef,0)
+    # params = cmssp.params
+    # goal_samples = Vector{Toy2DStateType}(undef,0)
 
-    dx = Uniform(TOY2D_GOAL_CENTRE.x - params.epsilon/2.0, TOY2D_GOAL_CENTRE.x + params.epsilon/2.0)
-    dy = Uniform(TOY2D_GOAL_CENTRE.y - params.epsilon/2.0, TOY2D_GOAL_CENTRE.y + params.epsilon/2.0)
+    # dx = Uniform(TOY2D_GOAL_CENTRE.x - params.epsilon/2.0, TOY2D_GOAL_CENTRE.x + params.epsilon/2.0)
+    # dy = Uniform(TOY2D_GOAL_CENTRE.y - params.epsilon/2.0, TOY2D_GOAL_CENTRE.y + params.epsilon/2.0)
 
-    for i = 1:num_samples
-        push!(goal_samples, Toy2DStateType(TOY2D_GOAL_MODE, Toy2DContState(rand(rng,dx), rand(rng,dy))))
-    end
+    # for i = 1:num_samples
+    #     push!(goal_samples, Toy2DStateType(TOY2D_GOAL_MODE, Toy2DContState(rand(rng,dx), rand(rng,dy))))
+    # end
+    goal_samples = [Toy2DStateType(TOY2D_GOAL_MODE, popped_cont)]
 
     return goal_samples
 end
@@ -306,17 +306,19 @@ function HHPC.generate_next_valid_modes(cmssp::Toy2DCMSSPType, mode::Int64, toy2
             if switch_points[1][1] == mode
                 next_mode = switch_points[1][2]
 
-                if next_mode in next_modes == false
-                    mode_idx = mode_index(cmssp, mode)
-                    next_mode_idx = mode_index(cmssp, next_mode)
-                    
-                    # Need to find action to take to next mode
-                    for (ac_idx,action) in cmssp.mode_actions
-                        if cmssp.modeswitch_mdp.T[mode_idx,ac_idx,next_mode_idx] > 0.0
-                            push!(action_nextmodes,(ac_idx,next_mode_idx))
-                            push!(next_modes, next_mode)
-                            break
-                        end
+                if next_mode in next_modes
+                    continue
+                end
+
+                mode_idx = mode_index(cmssp, mode)
+                next_mode_idx = mode_index(cmssp, next_mode)
+
+                # Need to find action to take to next mode
+                for (ac_idx,action) in enumerate(cmssp.mode_actions)
+                    if cmssp.modeswitch_mdp.T[mode_idx,ac_idx,next_mode_idx] > 0.0
+                        push!(action_nextmodes,(ac_idx,next_mode_idx))
+                        push!(next_modes, next_mode)
+                        break
                     end
                 end
             end
@@ -334,7 +336,7 @@ function HHPC.generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2
     curr_context_set = toy2d_context_set.curr_context_set
     curr_time = toy2d_context_set.curr_time
 
-    avg_samples_per_context = convert(Int64,round(num_samples/length(curr_context_set)))
+    avg_samples_per_context = convert(Int64,ceil(num_samples/length(curr_context_set)))
 
     for (hor,context) in enumerate(curr_context_set[2:end])
 
@@ -367,25 +369,27 @@ function HHPC.simulate_cmssp(cmssp::Toy2DCMSSPType, state::Toy2DStateType, a::To
 
     curr_mode = state.mode
     curr_cont_state = state.continuous
+    params = cmssp.params
 
     if typeof(a.action) <: Int64
         # action is mode switch - attempt
         mode_idx = mode_index(cmssp, curr_mode)
         mode_ac_idx = mode_actionindex(cmssp, a.action)
-        next_mode_idx = findfirst(x -> x > 0.0, cmssp.modeswitch_mdp[mode_idx, mode_ac_idx,:])
+        next_mode_idx = findfirst(x -> x > 0.0, cmssp.modeswitch_mdp.T[mode_idx, mode_ac_idx,:])
         next_mode = cmssp.modes[next_mode_idx]
 
         # Action cost incurred no matter what
-        reward = cmssp.R[mode_idx, mode_ac_idx]
+        reward = cmssp.modeswitch_mdp.R[mode_idx, mode_ac_idx]
 
         # Check if it can be done based on context
         for switch_points in curr_context
             if switch_points[1] == (curr_mode,next_mode)
-                if norm(rel_state(curr_cont_state,switch_points[2])) < params.epsilon
-                    @info "Mode switch possible!"
+                if norm(rel_state(curr_cont_state,switch_points[2])) < 2.5*params.epsilon
+                    @info "Successful mode switch to mode ",next_mode
                     next_state = Toy2DStateType(next_mode, curr_cont_state)
                     return (next_state, reward, false)
                 else
+                    @show switch_points[2]
                     @info "Mode switch failed!"
                     next_state = curr_state
                     return (next_state,  reward, true)
@@ -398,9 +402,9 @@ function HHPC.simulate_cmssp(cmssp::Toy2DCMSSPType, state::Toy2DStateType, a::To
         return (new_state, reward, true)
     else
         # Control action within mode
-        new_cont_state, reward = next_state_reward_sim(Toy2DModalMDPType(curr_mode), curr_cont_state, a.action, rng)
+        new_cont_state, reward = next_state_reward_sim(Toy2DModalMDPType(curr_mode, cmssp.params), curr_cont_state, a.action, rng)
         next_state = Toy2DStateType(curr_mode, new_cont_state)
-        return (next_state, new_context, reward, false)
+        return (next_state, reward, false)
     end
 end
 
@@ -415,7 +419,8 @@ function toy2d_parse_params(filename::AbstractString)
                            params_key["NUM_BRIDGE_SAMPLES"],
                            params_key["HORIZON_LIMIT"],
                            params_key["AXIS_VALS"],
-                           params_key["VALID_VERTICES_THRESHOLD"])
+                           params_key["VALID_VERTICES_THRESHOLD"],
+                           params_key["TIME_COEFFICIENT"])
 end
 
 
@@ -480,6 +485,7 @@ function HHPC.update_context_set!(cmssp::Toy2DCMSSPType, toy2d_context_set::Toy2
 
     switch_bias_dict = toy2d_context_set.switch_bias_dict
     curr_context_set = toy2d_context_set.curr_context_set
+    params = cmssp.params
 
     # For each switch, with 50% probability, have it either stay in place
     # Or go to the next point. In the first case, just maintain the same vector
@@ -499,7 +505,7 @@ function HHPC.update_context_set!(cmssp::Toy2DCMSSPType, toy2d_context_set::Toy2
         switch = switch_point[1]
         point = switch_point[2]
 
-        if toss < 0.5
+        if toss < 0.35
             # Stay and most_future is the same
             push!(next_context,(switch,point))
             push!(last_context,(switch,curr_last_context[i][2]))
@@ -530,4 +536,11 @@ function HHPC.update_context_set!(cmssp::Toy2DCMSSPType, toy2d_context_set::Toy2
 
     # Finally, update time
     toy2d_context_set.curr_time = toy2d_context_set.curr_time + 1
+end
+
+function HHPC.display_context_future(toy2d_context_set::Toy2DContextSet,future_time::Int64)
+
+    # IMP - Because if 0, then first
+    hor = future_time - toy2d_context_set.curr_time + 1
+    println(toy2d_context_set.curr_context_set[hor])
 end

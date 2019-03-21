@@ -37,8 +37,8 @@ export
     Toy2DContextType,
     Toy2DContextSet,
     Toy2DSolverType,
+    Toy2DOpenLoopVertex,
     TOY2D_MODES,
-    TOY2D_GOAL_CENTRE,
     TOY2D_GOAL_MODE,
     create_toy2d_cmssp,
     sample_toy2d,
@@ -60,7 +60,8 @@ export
     generate_bridge_sample_set,
     # HHPC
     simulate_cmssp,
-    update_contextset!
+    update_contextset!,
+    display_context_future
 
 
 include("toy_2d.jl")
