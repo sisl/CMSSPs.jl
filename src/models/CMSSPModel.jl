@@ -44,6 +44,5 @@ export
 
 
 include("cmssp_base.jl")
-# include("toy_2d.jl")
 
 end # End of submodule
