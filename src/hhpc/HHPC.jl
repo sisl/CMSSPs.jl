@@ -32,6 +32,7 @@ using CMSSPs.CMSSPModel
 # Open-loop exports
 export
     GraphTracker,
+    metadatatype,
     open_loop_plan!,
     update_graph_tracker!
 
@@ -45,10 +46,12 @@ export
     set_horizon_limit!,
     compute_terminalcost_localapprox!,
     finite_horizon_VI_localapprox!,
+    infinite_horizon_VI_localapprox,
     compute_min_value_per_horizon_localapprox!,
     horizon_weighted_value,
     horizon_weighted_actionvalue,
-    get_best_intramodal_action
+    get_best_intramodal_action,
+    get_best_intramodal_action_infhor
 
 # HHPC framework
 # Requirements

@@ -11,8 +11,8 @@ Attributes:
     - `start_state::CMSSPState{C,AC}`
     - `goal_modes::Vector{D}`
 """
-mutable struct HHPCSolver{D,C,AD,AC,CS,P,RNG <: AbstractRNG} <: Solver
-    graph_tracker::GraphTracker{D,C,AD,RNG}
+mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,RNG <: AbstractRNG} <: Solver
+    graph_tracker::GraphTracker{D,C,AD,M,RNG}
     modal_policies::Dict{D,ModalHorizonPolicy}
     modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}
     replan_time_threshold::Int64
@@ -24,13 +24,13 @@ mutable struct HHPCSolver{D,C,AD,AC,CS,P,RNG <: AbstractRNG} <: Solver
     max_steps::Int64
 end
 
-function HHPCSolver(::Type{AD}, num_samples::Int64, modal_policies::Dict{D,ModalHorizonPolicy},
+function HHPCSolver{D,C,AD,AC,CS,P,M,RNG}(num_samples::Int64, modal_policies::Dict{D,ModalHorizonPolicy},
                     modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}, deltaT::Int64, goal_modes::Vector{D},
                     start_state::CMSSPState{D,C}, start_context_set::CS, rng::RNG=Random.GLOBAL_RNG,
-                    heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,RNG <: AbstractRNG}
-    return HHPCSolver(GraphTracker(D,C,AD,num_samples,rng),
-                      modal_policies, modal_mdps, deltaT, 
-                      goal_modes, start_state, start_context_set, rng, heuristic, max_steps)
+                    heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,M,RNG <: AbstractRNG}
+    return HHPCSolver{D,C,AD,AC,CS,P,M,RNG}(GraphTracker{D, C, AD, RNG}(num_samples,rng),
+                                            modal_policies, modal_mdps, deltaT, 
+                                            goal_modes, start_state, start_context_set, rng, heuristic, max_steps)
 end
 
 
@@ -109,6 +109,7 @@ end
     AC = controlactiontype(cmssp)
     CS = typeof(solver.curr_context_set)
     PR = typeof(cmssp.params)
+    M = metadatatype(solver.graph_tracker)
 
     @req isterminal(::P, ::S)
     @req generate_sr(::ModalMDP{D,C,AC,PR}, ::C, ::AC, ::typeof(solver.rng)) # OR transition + reward?
@@ -119,7 +120,7 @@ end
     @req generate_goal_sample_set(::P, ::C, ::Int64, ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D, ::CS)
     @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D}, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
-    
+    @req zero(M)    
 
     # Local layer requirements
     @req get_relative_state(::ModalMDP{D,C,AC,PR}, ::C, ::C)

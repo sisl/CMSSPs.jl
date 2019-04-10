@@ -10,8 +10,8 @@ Attributes:
     - `curr_soln_path_idxs::Vector{Int64}` The in-order list of indices from current start to current goal
     - `num_samples::Int64` The N parameter for the number of bridge samples to generate per mode switch
 """
-mutable struct GraphTracker{D,C,AD,RNG <: AbstractRNG}
-    curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD}}
+mutable struct GraphTracker{D, C, AD, M, RNG <: AbstractRNG}
+    curr_graph::SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}
     mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
     curr_start_idx::Int64
     curr_goal_idx::Int64
@@ -20,14 +20,17 @@ mutable struct GraphTracker{D,C,AD,RNG <: AbstractRNG}
     rng::RNG
 end
 
-function GraphTracker(::Type{D}, ::Type{C}, ::Type{AD}, N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
-    return GraphTracker(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
-                        Dict{Tuple{D,D},MVector{2,Int64}}(),
-                        0,0,Vector{Int64}(undef,0),N,rng)
-end
+function metadatatype(::GraphTracker{D, C, AD, M, RNG}) where {D, C, AD, M, RNG <: AbstractRNG} = M
 
-function GraphTracker{D,C,AD,RNG}(::Type{D}, ::Type{C}, ::Type{AD}, N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
-    return GraphTracker{D,C,AD,RNG}(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
+# TODO : Do we need the types sent as args?
+# function GraphTracker(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
+#     return GraphTracker(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
+#                         Dict{Tuple{D,D},MVector{2,Int64}}(),
+#                         0,0,Vector{Int64}(undef,0),N,rng)
+# end
+
+function GraphTracker{D, C, AD, M, RNG}(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D, C, AD, M, RNG <: AbstractRNG}
+    return GraphTracker{D, C, AD, M, RNG}(SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}(),
                         Dict{Tuple{D,D},MVector{2,Int64}}(),
                         0,0,Vector{Int64}(undef,0),N,rng)
 end
@@ -108,24 +111,26 @@ Arguments:
     - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
     - `graph_tracker::GraphTracker{D,C}` The graph_tracker instance to update in place
 """
-function update_graph_tracker!(::Type{D}, cmssp::CMSSP, graph_tracker::GraphTracker, context_set::CS) where {D,CS}
+function update_graph_tracker!(cmssp::CMSSP{D, C, AD, AC}, graph_tracker::GraphTracker, context_set::CS) where {D, C, AD, AC, CS}
     
     # Run through mode switch ranges and either retain or remove if context has changed too much
-    keys_to_delete = Vector{Tuple{D,D}}(undef,0)
+    keys_to_delete = Vector{Tuple{D,D}}(undef, 0)
 
-    for (switch,idx_range) in graph_tracker.mode_switch_idx_range
+    for (switch, idx_range) in graph_tracker.mode_switch_idx_range
         # If samples in final mode, skip
         if switch[1] == switch[2]
             continue
         end
 
         # Copy over subvector of vertices
-        range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
-        valid_update = update_vertices_with_context!(cmssp, range_subvector, switch, context_set)
+        # range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
+        (valid_update, new_idx_range) = update_vertices_with_context!(cmssp, graph_tracker.curr_graph.vertices, switch, context_set)
 
         # Delete key if not updated
         if valid_update == false
             push!(keys_to_delete,switch)
+        else
+            graph_tracker.mode_switch_idx_range = new_idx_range
         end
     end
 

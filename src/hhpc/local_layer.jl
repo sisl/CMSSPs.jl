@@ -209,6 +209,16 @@ function finite_horizon_VI_localapprox!(mdp::ModalMDP, lfa::LFA,
     return ModalHorizonPolicy(in_horizon_policy, out_horizon_policy)
 end
 
+
+function infinite_horizon_VI_localapprox(mdp::ModalMDP, lfa::LFA, max_iterations::Int64=50,
+                                 is_mdp_generative::Bool=false, n_generative_samples::Int64=0,
+                                 rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG, LFA <: LocalFunctionApproximator}
+    infhor_solver = LocalApproximationValueIterationSolver(lfa, max_iterations=max_iterations,
+                                                           verbose=true, rng=rng, is_mdp_generative=is_mdp_generative,
+                                                           n_generative_samples=n_generative_samples)
+    infhor_policy = solve(infhor_solver, mdp)
+    return infhor_policy
+end
 """
 Compute the worst cost or minimum value per horizon and update mdp object in place.
 
@@ -361,26 +371,8 @@ function get_best_intramodal_action(modal_policy::ModalHorizonPolicy, curr_times
 end
 
 
-# function get_best_intramodal_action_infhor(modal_policy::ModalHorizonPolicy, curr_rch_value::Int64,
-#                                            curr_state::C, target_state::C) where C
-
-#     mdp = modal_policy.in_horizon_policy.mdp
-
-#     if curr_rch_value == 0
-#         curr_rch_value = mdp.horizon_limit-1
-#     end
-#     temp_tp_dist = TPDistribution([curr_rch_value], [1.0])
-
-#     best_action = mdp.actions[1]
-#     best_action_val = -Inf
-
-#     for a in mdp.actions
-#         action_val = horizon_weighted_actionvalue(modal_policy, 0, temp_tp_dist, curr_state, target_state, a)
-#         if action_val > best_action_val
-#             best_action_val = action_val
-#             best_action = a
-#         end
-#     end
-
-#     return (best_action, curr_rch_value-1)
-# end
+function get_best_intramodal_action_infhor(policy::P, curr_state::C, target_state::C) where {P <: Policy, C}
+    temp_relative_state = get_relative_state(mdp, curr_state, target_state)
+    best_action = action(policy, temp_relative_state)
+    return best_action
+end

@@ -20,6 +20,9 @@ function get_speed(state::MultiRotorUAVState)
     return sqrt(state.xdot^2 + state.ydot^2)
 end 
 
+function rel_state(source::MultiRotorUAVState, target::MultiRotorUAVState)
+    return MultiRotorUAVState(source.x - target.x, source.y - target.y, source.xdot, source.ydot)
+
 """
 Represents control action for simple 2D multirotor, with acceleration in each direction.
 """
@@ -169,3 +172,20 @@ function dynamics_cost(model::MultiRotorUAVDynamicsModel, state::MultiRotorUAVSt
 
     return cost
 end
+
+function dynamics_cost(params::Parameters, state::MultiRotorUAVState, next_state::MultiRotorUAVState)
+    old_point = Point(state.x, state.y)
+    new_point = Point(next_state.x, next_state.y)
+    dyn_dist = point_dist(old_point, new_point)
+
+    cost = 0.0
+
+    # Compute cost due to flying or due to hovering
+    if dyn_dist < params.time_params.MDP_TIMESTEP*params.scale_params.EPSILON &&
+        sqrt(next_state.xdot^2 + next_state.ydot^2) < params.time_params.MDP_TIMESTEP*params.scale_params.EPSILON
+        cost += params.cost_params.HOVER_COEFFICIENT*params.time_params.MDP_TIMESTEP
+    else
+        cost += params.cost_params.FLIGHT_COEFFICIENT*dyn_dist
+    end
+
+return cost

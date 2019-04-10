@@ -114,7 +114,6 @@ function create_toy2d_cmssp(params::Toy2DParameters)
 end
 
 
-# Needs to be bound to parameters in runtime script
 function POMDPs.isterminal(mdp::Toy2DModalMDPType, relative_state::Toy2DContState)
     return norm(relative_state) < mdp.params.epsilon
 end
@@ -153,10 +152,6 @@ function generate_start_state(cmssp::Toy2DCMSSPType, rng::RNG) where {RNG <: Abs
     return Toy2DStateType(1, sample_toy2d(rng))
 end
 
-
-# TODO
-# generate_sr for modes - done
-# global layer reqs
 
 # Just used by generate_sr - euclidean distance + squared velocity cost
 function POMDPs.reward(mdp::Toy2DModalMDPType, state::Toy2DContState,
@@ -544,3 +539,5 @@ function HHPC.display_context_future(toy2d_context_set::Toy2DContextSet,future_t
     hor = future_time - toy2d_context_set.curr_time + 1
     println(toy2d_context_set.curr_context_set[hor])
 end
+
+## TODO : NEED TO IMPLEMENT generate_sr for MCTS

@@ -26,25 +26,25 @@ using CMSSPs.HHPC
 
 
 # Toy2D exports
-export
-    Toy2DContState,
-    Toy2DContAction,
-    Toy2DParameters,
-    Toy2DStateType,
-    Toy2DActionType,
-    Toy2DCMSSPType,
-    Toy2DModalMDPType,
-    Toy2DContextType,
-    Toy2DContextSet,
-    Toy2DSolverType,
-    Toy2DOpenLoopVertex,
-    TOY2D_MODES,
-    TOY2D_GOAL_MODE,
-    create_toy2d_cmssp,
-    sample_toy2d,
-    toy2d_parse_params,
-    generate_start_state,
-    generate_start_context_set
+# export
+#     Toy2DContState,
+#     Toy2DContAction,
+#     Toy2DParameters,
+#     Toy2DStateType,
+#     Toy2DActionType,
+#     Toy2DCMSSPType,
+#     Toy2DModalMDPType,
+#     Toy2DContextType,
+#     Toy2DContextSet,
+#     Toy2DSolverType,
+#     Toy2DOpenLoopVertex,
+#     TOY2D_MODES,
+#     TOY2D_GOAL_MODE,
+#     create_toy2d_cmssp,
+#     sample_toy2d,
+#     toy2d_parse_params,
+#     generate_start_state,
+#     generate_start_context_set
     
 
 
@@ -64,6 +64,10 @@ export
     display_context_future
 
 
-include("toy_2d.jl")
+# include("toy_2d.jl")
+include("dreamr/dreamr_types.jl")
+include("dreamr/dreamr_params.jl")
+include("dreamr/dreamr_dynamics.jl")
+include("dreamr/dreamr_cmssp.jl")
 
 end # End of submodule
