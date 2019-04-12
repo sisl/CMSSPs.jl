@@ -33,6 +33,7 @@ using CMSSPs.CMSSPModel
 export
     GraphTracker,
     metadatatype,
+    bookkeepingtype,
     open_loop_plan!,
     update_graph_tracker!
 
@@ -77,9 +78,9 @@ export
     get_relative_state,
     # Global
     update_vertices_with_context!,
-    generate_goal_sample_set,
+    generate_goal_sample_set!,
     generate_next_valid_modes,
-    generate_bridge_sample_set,
+    generate_bridge_sample_set!,
     # HHPC
     simulate_cmssp,
     update_context_set!,

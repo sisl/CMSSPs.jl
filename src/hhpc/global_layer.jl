@@ -10,17 +10,19 @@ Attributes:
     - `curr_soln_path_idxs::Vector{Int64}` The in-order list of indices from current start to current goal
     - `num_samples::Int64` The N parameter for the number of bridge samples to generate per mode switch
 """
-mutable struct GraphTracker{D, C, AD, M, RNG <: AbstractRNG}
-    curr_graph::SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}
+mutable struct GraphTracker{D, C, AD, M, B, RNG <: AbstractRNG}
+    curr_graph::SimpleVListGraph{OpenLoopVertex{D, C, AD, M, B}}
     mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
     curr_start_idx::Int64
     curr_goal_idx::Int64
     curr_soln_path_idxs::Vector{Int64}
     num_samples::Int64
+    bookkeeping::B
     rng::RNG
 end
 
-function metadatatype(::GraphTracker{D, C, AD, M, RNG}) where {D, C, AD, M, RNG <: AbstractRNG} = M
+metadatatype(::GraphTracker{D, C, AD, M, B, RNG}) where {D, C, AD, M, B, RNG <: AbstractRNG} = M
+bookkeepingtype(::GraphTracker{D, C, AD, M, B, RNG}) where {D, C, AD, M, B, RNG <: AbstractRNG} = B
 
 # TODO : Do we need the types sent as args?
 # function GraphTracker(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
@@ -29,10 +31,10 @@ function metadatatype(::GraphTracker{D, C, AD, M, RNG}) where {D, C, AD, M, RNG 
 #                         0,0,Vector{Int64}(undef,0),N,rng)
 # end
 
-function GraphTracker{D, C, AD, M, RNG}(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D, C, AD, M, RNG <: AbstractRNG}
-    return GraphTracker{D, C, AD, M, RNG}(SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}(),
+function GraphTracker{D, C, AD, M, B, RNG}(N::Int64, bookkeeping::B, rng::RNG=Random.GLOBAL_RNG) where {D, C, AD, M, B, RNG <: AbstractRNG}
+    return GraphTracker{D, C, AD, M, B, RNG}(SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}(),
                         Dict{Tuple{D,D},MVector{2,Int64}}(),
-                        0,0,Vector{Int64}(undef,0),N,rng)
+                        0, 0, Vector{Int64}(undef, 0), N, bookkeeping, rng)
 end
 
 """
@@ -62,7 +64,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
-    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex(s_t,cmssp.mode_actions[1],TPDistribution([curr_time],[1.0])))
+    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex(s_t, cmssp.mode_actions[1], TPDistribution([curr_time], [1.0])))
     graph_tracker.curr_start_idx = num_vertices(graph_tracker.curr_graph)
     graph_tracker.curr_goal_idx = 0
 
@@ -124,7 +126,7 @@ function update_graph_tracker!(cmssp::CMSSP{D, C, AD, AC}, graph_tracker::GraphT
 
         # Copy over subvector of vertices
         # range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
-        (valid_update, new_idx_range) = update_vertices_with_context!(cmssp, graph_tracker.curr_graph.vertices, switch, context_set)
+        (valid_update, new_idx_range) = update_vertices_with_context!(cmssp, graph_tracker, switch, context_set)
 
         # Delete key if not updated
         if valid_update == false
@@ -167,16 +169,23 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
 
     # If goal mode but NOT goal state, add samples from goal
     if popped_mode in vis.goal_modes
+        
         # If leftover from previous step, just re-add those
         if haskey(vis.graph_tracker.mode_switch_idx_range,(popped_mode,popped_mode))
-            mode_switch_range = vis.graph_tracker.mode_switch_idx_range[(popped_mode,popped_mode)]
-            for nbr_idx = mode_switch_range[1] : mode_switch_range[2]
+            
+            goal_nbrs_to_add = get_goal_sample_idxs(vis.cmssp, vis.graph_tracker, v)
+            
+            for nbr_idx in goal_nbrs_to_add
                 push!(nbrs, nbr_idx)
             end
+        
         else
+            
             # Generate goal sample set
-            goal_samples = generate_goal_sample_set(vis.cmssp, popped_cont, vis.graph_tracker.num_samples, vis.graph_tracker.rng)
+            goal_samples = generate_goal_sample_set!(vis.cmssp, v, vis.context_set, vis.graph_tracker, vis.graph_tracker.rng)
+            
             if length(goal_samples) > 0
+                
                 # Update mode switch map range
                 range_st = num_vertices(vis.graph_tracker.curr_graph)+1
                 range_end = range_st + length(goal_samples)-1
@@ -186,7 +195,13 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
                 # IMP - Add a default mode-switch action
                 for (i,gs) in enumerate(goal_samples)
                     add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(gs, vis.cmssp.mode_actions[1]))
-                    push!(nbrs,range_st+i-1)
+                end
+
+                # FOR NBRS - Again call the get_goal_sample_idxs method
+                goal_nbrs_to_add = get_goal_sample_idxs(vis.cmssp, vis.graph_tracker, v)
+                
+                for nbr_idx in goal_nbrs_to_add
+                    push!(nbrs, nbr_idx)
                 end
             end
         end
@@ -199,17 +214,23 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # @show vis.graph_tracker.mode_switch_idx_range
 
     for (action,nvm) in next_valid_modes
+        
         # First check if mode switch has them, then just use those
         if haskey(vis.graph_tracker.mode_switch_idx_range,(popped_mode,nvm))
-            mode_switch_range = vis.graph_tracker.mode_switch_idx_range[(popped_mode,nvm)]
-            for nbr_idx = mode_switch_range[1] : mode_switch_range[2]
+            
+            bridge_nbrs_to_add = get_bridge_sample_idxs(vis.cmssp, vis.graph_tracker, (popped_mode, nvm), v)
+
+            for nbr_idx in bridge_nbrs_to_add
                 push!(nbrs, nbr_idx)
             end
+
         else
+            
             # Generate bridge samples
-            bridge_samples = generate_bridge_sample_set(vis.cmssp, popped_cont, 
-                                                        (popped_mode, nvm), vis.graph_tracker.num_samples, 
-                                                        vis.context_set, vis.graph_tracker.rng)
+            bridge_samples = generate_bridge_sample_set!(vis.cmssp, v, 
+                                                        (popped_mode, nvm),
+                                                        vis.context_set, vis.graph_tracker,
+                                                        vis.graph_tracker.rng)
             @assert length(bridge_samples) > 0
 
             # Update mode switch map range
@@ -220,7 +241,12 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
             # Add vertices to graph and to nbrs
             for (i,bs) in enumerate(bridge_samples)
                 add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(popped_mode,nvm,bs,action))
-                push!(nbrs,range_st+i-1)
+            end
+
+            bridge_nbrs_to_add = get_bridge_sample_idxs(vis.cmssp, vis.graph_tracker, (popped_mode, nvm), v)
+
+            for nbr_idx in bridge_nbrs_to_add
+                push!(nbrs, nbr_idx)
             end
         end
     end
@@ -229,5 +255,4 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # readline()
 
     return true
-
 end

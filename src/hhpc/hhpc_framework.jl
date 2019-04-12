@@ -11,8 +11,8 @@ Attributes:
     - `start_state::CMSSPState{C,AC}`
     - `goal_modes::Vector{D}`
 """
-mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,RNG <: AbstractRNG} <: Solver
-    graph_tracker::GraphTracker{D,C,AD,M,RNG}
+mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
+    graph_tracker::GraphTracker{D,C,AD,M,B,RNG}
     modal_policies::Dict{D,ModalHorizonPolicy}
     modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}
     replan_time_threshold::Int64
@@ -24,17 +24,18 @@ mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,RNG <: AbstractRNG} <: Solver
     max_steps::Int64
 end
 
-function HHPCSolver{D,C,AD,AC,CS,P,M,RNG}(num_samples::Int64, modal_policies::Dict{D,ModalHorizonPolicy},
-                    modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}, deltaT::Int64, goal_modes::Vector{D},
-                    start_state::CMSSPState{D,C}, start_context_set::CS, rng::RNG=Random.GLOBAL_RNG,
-                    heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,M,RNG <: AbstractRNG}
-    return HHPCSolver{D,C,AD,AC,CS,P,M,RNG}(GraphTracker{D, C, AD, RNG}(num_samples,rng),
+function HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict{D,ModalHorizonPolicy},
+                                            modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}, deltaT::Int64, goal_modes::Vector{D},
+                                            start_state::CMSSPState{D,C}, start_context_set::CS, 
+                                            bookkeeping::B, rng::RNG=Random.GLOBAL_RNG,
+                                            heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG}
+    return HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(GraphTracker{D, C, AD, M, B, RNG}(num_samples, bookkeeping, rng),
                                             modal_policies, modal_mdps, deltaT, 
                                             goal_modes, start_state, start_context_set, rng, heuristic, max_steps)
 end
 
 
-function set_start_state_context_set!(solver::HHPCSolver, start_state::CMSSPState{D,C}, start_context_set::CS) where {D,C,CS}
+function set_start_state_context_set!(solver::HHPCSolver, start_state::CMSSPState{D,C}, start_context_set::CS) where {D, C, CS}
     solver.curr_state = start_state
     solver.curr_context_set = start_context_set
 end
@@ -110,16 +111,19 @@ end
     CS = typeof(solver.curr_context_set)
     PR = typeof(cmssp.params)
     M = metadatatype(solver.graph_tracker)
+    B = bookkeepingtype(solver.graph_tracker)
 
     @req isterminal(::P, ::S)
     @req generate_sr(::ModalMDP{D,C,AC,PR}, ::C, ::AC, ::typeof(solver.rng)) # OR transition + reward?
     @req isterminal(::ModalMDP{D,C,AC,PR}, ::C)
 
     # Global layer requirements
-    @req update_vertices_with_context!(::P, ::Vector{OpenLoopVertex{D,C,AD}}, ::Tuple{D,D}, ::CS)
-    @req generate_goal_sample_set(::P, ::C, ::Int64, ::RNG where {RNG <: AbstractRNG})
+    @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::Tuple{D,D}, ::CS)
+    @req generate_goal_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D, ::CS)
-    @req generate_bridge_sample_set(::P, ::C, ::Tuple{D,D}, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
+    @req generate_bridge_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::Tuple{D,D}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req get_goal_sample_idxs(::P, ::typeof(solver.graph_tracker), ::OpenLoopVertex{D, C, AD, M})
+    @req get_bridge_sample_idxs(::P, ::typeof(solver.graph_tracker), ::Tuple{D, D}, ::OpenLoopVertex{D, C, AD, M})
     @req zero(M)    
 
     # Local layer requirements
@@ -131,6 +135,7 @@ end
     # HHPC requirements
     @req simulate_cmssp(::P, ::S, ::A, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
     @req update_context_set!(::P, ::CS, ::RNG where {RNG <: AbstractRNG})
+    @req get_bridging_action(::P, ::OpenLoopVertex{D, C, AD, M})
 
 end
 
@@ -183,7 +188,7 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
         if relative_time < 0.5 
             # TODO: Guaranteed to not be truly terminal state
             # Action is just the bridging action
-            curr_action = next_target.bridging_action
+            curr_action = get_bridging_action(solver.cmssp, next_target)
         else
             # Assuming finite horizon now - handle internally
             curr_action = get_best_intramodal_action(solver.modal_policies[solver.curr_state.mode], 

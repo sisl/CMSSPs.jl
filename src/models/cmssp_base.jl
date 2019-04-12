@@ -121,7 +121,7 @@ Attributes:
     - `post_bridge_state::C` The continuous state sample after the transition (represents post-conditions)
     - `tp::TPDistribution` The distribution over time horizons for the bridge sample to be reached
 """
-struct BridgeSample{C,M}
+struct BridgeSample{C, M}
     pre_bridge_state::C
     post_bridge_state::C
     tp::TPDistribution

@@ -96,7 +96,7 @@ end
 
 Given a Point instance, generate the corresponding MultiRotorUAVState at rest at that position
 """
-function get_state_at_rest(model::MultiRotorUAVDynamicsModel, p::Point)
+function get_state_at_rest(::Type{MultiRotorUAVState}, p::Point)
     return MultiRotorUAVState(p.x, p.y, 0.0, 0.0)
 end
 
@@ -105,7 +105,7 @@ get_relative_state_to_goal(model::MultiRotorUAVDynamicsModel, goal_pos::Point, s
 
 Given some goal position, get the MultiRotorUAVState with relative position and own velocity
 """
-function get_relative_state_to_goal(model::MultiRotorUAVDynamicsModel, goal_pos::Point, state::MultiRotorUAVState)
+function get_relative_state_to_goal(::Type{MultiRotorUAVState}, goal_pos::Point, state::MultiRotorUAVState)
     return MultiRotorUAVState(state.x - goal_pos.x, state.y - goal_pos.y, state.xdot, state.ydot)
 end
 

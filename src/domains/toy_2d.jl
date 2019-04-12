@@ -355,6 +355,9 @@ function HHPC.generate_bridge_sample_set(cmssp::Toy2DCMSSPType, cont_state::Toy2
 end
 
 
+"""
+Returns next state, reward, and if a mode switch failed
+"""
 
 function HHPC.simulate_cmssp(cmssp::Toy2DCMSSPType, state::Toy2DStateType, a::Toy2DActionType, t::Int64,
                         toy2d_context_set::Toy2DContextSet, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
