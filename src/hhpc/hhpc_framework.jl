@@ -121,10 +121,10 @@ end
     @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::Tuple{D,D}, ::CS)
     @req generate_goal_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D, ::CS)
-    @req generate_bridge_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::Tuple{D,D}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req generate_bridge_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::Tuple{D,AD,D}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
     @req get_goal_sample_idxs(::P, ::typeof(solver.graph_tracker), ::OpenLoopVertex{D, C, AD, M})
     @req get_bridge_sample_idxs(::P, ::typeof(solver.graph_tracker), ::Tuple{D, D}, ::OpenLoopVertex{D, C, AD, M})
-    @req zero(M)    
+    @req zero(::M)    
 
     # Local layer requirements
     @req get_relative_state(::ModalMDP{D,C,AC,PR}, ::C, ::C)
@@ -135,7 +135,6 @@ end
     # HHPC requirements
     @req simulate_cmssp(::P, ::S, ::A, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
     @req update_context_set!(::P, ::CS, ::RNG where {RNG <: AbstractRNG})
-    @req get_bridging_action(::P, ::OpenLoopVertex{D, C, AD, M})
 
 end
 
@@ -181,24 +180,33 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
 
         # Check if 'terminal' state as per modal MDP
         @assert solver.curr_state.mode == next_target.pre_bridge_state.mode
-        relative_state = get_relative_state(solver.modal_mdps[solver.curr_state.mode], solver.curr_state.continuous, next_target.pre_bridge_state.continuous)
-        relative_time = mean(next_target.tp) - t
-        # @show relative_time
+        
+        if is_inf_hor(next_target.tp)
 
-        if relative_time < 0.5 
-            # TODO: Guaranteed to not be truly terminal state
-            # Action is just the bridging action
-            curr_action = get_bridging_action(solver.cmssp, next_target)
+            # Infinite horizon time unconstrained action
+            curr_action = get_best_intramodal_action_infhor(solver.modal_policies[solver.curr_state.mode],
+                                                            solver.curr_state.continuous,
+                                                            next_target.pre_bridge_state.continuous)
         else
-            # Assuming finite horizon now - handle internally
-            curr_action = get_best_intramodal_action(solver.modal_policies[solver.curr_state.mode], 
-                                                     t,
-                                                     next_target.tp, 
-                                                     solver.curr_state.continuous, 
-                                                     next_target.pre_bridge_state.continuous)
-            # end
-            curr_action = curr_action.action
+            relative_time = mean(next_target.tp) - t
+            # @show relative_time
+
+            if relative_time < 0.5 
+                # TODO: Guaranteed to not be truly terminal state
+                # Action is just the bridging action
+                # curr_action = get_bridging_action(solver.cmssp, solver.curr_state, next_target)
+                curr_action = next_target.bridging_action
+            else
+                # Assuming finite horizon now - handle internally
+                curr_action = get_best_intramodal_action(solver.modal_policies[solver.curr_state.mode], 
+                                                         t,
+                                                         next_target.tp, 
+                                                         solver.curr_state.continuous, 
+                                                         next_target.pre_bridge_state.continuous)
+            end
         end
+
+        curr_action = curr_action.action
 
         @show curr_action
         readline()
@@ -208,8 +216,8 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
         # If curr_action = NOTHING, means interrupt
         # So simulator should handle NOTHING
         # Will typically be bound to other environment variables
-        update_context_set!(cmssp, solver.curr_context_set,solver.rng)
-        (new_state, reward, failed_mode_switch) = simulate_cmssp(cmssp, solver.curr_state, temp_full_action, t, solver.curr_context_set, solver.rng)
+        update_context_set!(cmssp, solver.curr_context_set, solver.rng)
+        (new_state, reward, failed_mode_switch) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, solver.curr_context_set, solver.rng)
         t = t+1
         total_cost += -1.0*reward
 

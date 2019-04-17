@@ -84,20 +84,21 @@ export
     # HHPC
     simulate_cmssp,
     update_context_set!,
-    display_context_future
+    display_context_future,
 
 # Local reqs
 function get_relative_state end
 function expected_reward end
 # Global reqs
 function update_vertices_with_context! end
-function generate_goal_sample_set end
+function generate_goal_sample_set! end
 function generate_next_valid_modes end
-function generate_bridge_sample_set end
+function generate_bridge_sample_set! end
 # HHPC reqs
-function simulate_cmssp end
+function simulate_cmssp! end
 function update_context_set! end
 function display_context_future end
+function get_bridging_action end
 
 
 include("global_layer.jl")

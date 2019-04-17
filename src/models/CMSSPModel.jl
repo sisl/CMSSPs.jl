@@ -39,6 +39,7 @@ export
     mode_index,
     mode_actionindex,
     TPDistribution,
+    is_inf_hor,
     BridgeSample,
     OpenLoopVertex
 

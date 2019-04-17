@@ -12,7 +12,6 @@ Attributes:
 """
 mutable struct GraphTracker{D, C, AD, M, B, RNG <: AbstractRNG}
     curr_graph::SimpleVListGraph{OpenLoopVertex{D, C, AD, M, B}}
-    mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}
     curr_start_idx::Int64
     curr_goal_idx::Int64
     curr_soln_path_idxs::Vector{Int64}
@@ -60,7 +59,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
                          context_set::CS) where {D,CS} 
 
     # First update the context
-    update_graph_tracker!(D, cmssp, graph_tracker, context_set)
+    update_vertices_with_context!(cmssp, graph_tracker, context_set)
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
@@ -113,34 +112,34 @@ Arguments:
     - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
     - `graph_tracker::GraphTracker{D,C}` The graph_tracker instance to update in place
 """
-function update_graph_tracker!(cmssp::CMSSP{D, C, AD, AC}, graph_tracker::GraphTracker, context_set::CS) where {D, C, AD, AC, CS}
+# function update_graph_tracker!(cmssp::CMSSP{D, C, AD, AC}, graph_tracker::GraphTracker, context_set::CS) where {D, C, AD, AC, CS}
     
-    # Run through mode switch ranges and either retain or remove if context has changed too much
-    keys_to_delete = Vector{Tuple{D,D}}(undef, 0)
+#     # Run through mode switch ranges and either retain or remove if context has changed too much
+#     keys_to_delete = Vector{Tuple{D,D}}(undef, 0)
 
-    for (switch, idx_range) in graph_tracker.mode_switch_idx_range
-        # If samples in final mode, skip
-        if switch[1] == switch[2]
-            continue
-        end
+#     for (switch, idx_range) in graph_tracker.mode_switch_idx_range
+#         # If samples in final mode, skip
+#         if switch[1] == switch[2]
+#             continue
+#         end
 
-        # Copy over subvector of vertices
-        # range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
-        (valid_update, new_idx_range) = update_vertices_with_context!(cmssp, graph_tracker, switch, context_set)
+#         # Copy over subvector of vertices
+#         # range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
+#         (valid_update, new_idx_range) = update_vertices_with_context!(cmssp, graph_tracker, switch, context_set)
 
-        # Delete key if not updated
-        if valid_update == false
-            push!(keys_to_delete,switch)
-        else
-            graph_tracker.mode_switch_idx_range = new_idx_range
-        end
-    end
+#         # Delete key if not updated
+#         if valid_update == false
+#             push!(keys_to_delete,switch)
+#         else
+#             graph_tracker.mode_switch_idx_range = new_idx_range
+#         end
+#     end
 
-    # Iterate over keys_to_delete and delete those that are not updated
-    for ktd in keys_to_delete
-        delete!(graph_tracker.mode_switch_idx_range, ktd)
-    end
-end
+#     # Iterate over keys_to_delete and delete those that are not updated
+#     for ktd in keys_to_delete
+#         delete!(graph_tracker.mode_switch_idx_range, ktd)
+#     end
+# end
 
 
 """
@@ -169,40 +168,22 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
 
     # If goal mode but NOT goal state, add samples from goal
     if popped_mode in vis.goal_modes
+            
+        # Generate goal sample set
+        (samples_to_add, nbrs_to_add) = generate_goal_sample_set!(vis.cmssp, v, vis.context_set, vis.graph_tracker, vis.graph_tracker.rng)
         
-        # If leftover from previous step, just re-add those
-        if haskey(vis.graph_tracker.mode_switch_idx_range,(popped_mode,popped_mode))
-            
-            goal_nbrs_to_add = get_goal_sample_idxs(vis.cmssp, vis.graph_tracker, v)
-            
-            for nbr_idx in goal_nbrs_to_add
-                push!(nbrs, nbr_idx)
-            end
-        
-        else
-            
-            # Generate goal sample set
-            goal_samples = generate_goal_sample_set!(vis.cmssp, v, vis.context_set, vis.graph_tracker, vis.graph_tracker.rng)
-            
-            if length(goal_samples) > 0
-                
-                # Update mode switch map range
-                range_st = num_vertices(vis.graph_tracker.curr_graph)+1
-                range_end = range_st + length(goal_samples)-1
-                vis.graph_tracker.mode_switch_idx_range[(popped_mode,popped_mode)] = MVector{2,Int64}(range_st, range_end)
-                
-                # Add vertices to graph and to nbrs
-                # IMP - Add a default mode-switch action
-                for (i,gs) in enumerate(goal_samples)
-                    add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(gs, vis.cmssp.mode_actions[1]))
-                end
+        for nbr_idx in nbrs_to_add
+            push!(nbrs, nbr_idx)
+        end
 
-                # FOR NBRS - Again call the get_goal_sample_idxs method
-                goal_nbrs_to_add = get_goal_sample_idxs(vis.cmssp, vis.graph_tracker, v)
-                
-                for nbr_idx in goal_nbrs_to_add
-                    push!(nbrs, nbr_idx)
-                end
+        num_new_samples = length(samples_to_add)
+
+        if num_new_samples > 0
+            
+            # Add vertices to graph and to nbrs
+            for gs in samples_to_add
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(gs, vis.cmssp.mode_actions[1]))
+                push!(nbrs, num_vertices(vis.graph_tracker.curr_graph))
             end
         end
     end
@@ -213,46 +194,30 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # @show next_valid_modes
     # @show vis.graph_tracker.mode_switch_idx_range
 
-    for (action,nvm) in next_valid_modes
-        
-        # First check if mode switch has them, then just use those
-        if haskey(vis.graph_tracker.mode_switch_idx_range,(popped_mode,nvm))
+    for (action, nvm) in next_valid_modes
             
-            bridge_nbrs_to_add = get_bridge_sample_idxs(vis.cmssp, vis.graph_tracker, (popped_mode, nvm), v)
+        # Generate bridge samples
+        (samples_to_add, nbrs_to_add) = generate_bridge_sample_set!(vis.cmssp, v, 
+                                                                    (popped_mode, action, nvm),
+                                                                    vis.context_set, vis.graph_tracker,
+                                                                    vis.graph_tracker.rng)
+        for nbr_idx in nbrs_to_add
+            push!(nbrs, nbr_idx)
+        end
 
-            for nbr_idx in bridge_nbrs_to_add
-                push!(nbrs, nbr_idx)
-            end
+        num_new_samples = length(samples_to_add)
 
-        else
-            
-            # Generate bridge samples
-            bridge_samples = generate_bridge_sample_set!(vis.cmssp, v, 
-                                                        (popped_mode, nvm),
-                                                        vis.context_set, vis.graph_tracker,
-                                                        vis.graph_tracker.rng)
-            @assert length(bridge_samples) > 0
-
-            # Update mode switch map range
-            range_st = num_vertices(vis.graph_tracker.curr_graph)+1
-            range_end = range_st + length(bridge_samples)-1
-            vis.graph_tracker.mode_switch_idx_range[(popped_mode,nvm)] = MVector{2,Int64}(range_st, range_end)
+        if num_new_samples > 0
 
             # Add vertices to graph and to nbrs
-            for (i,bs) in enumerate(bridge_samples)
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(popped_mode,nvm,bs,action))
-            end
-
-            bridge_nbrs_to_add = get_bridge_sample_idxs(vis.cmssp, vis.graph_tracker, (popped_mode, nvm), v)
-
-            for nbr_idx in bridge_nbrs_to_add
-                push!(nbrs, nbr_idx)
+            for bs in samples_to_add
+                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(popped_mode, nvm, bs, action))
+                push!(nbrs, num_vertices(vis.graph_tracker.curr_graph))
             end
         end
     end
 
     #@show nbrs
     # readline()
-
     return true
 end

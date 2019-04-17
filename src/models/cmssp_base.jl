@@ -66,6 +66,7 @@ controlactiontype(::CMSSP{D,C,AD,AC}) where {D,C,AD,AC} = AC
 
 
 const TPDistribution = SparseCat{Vector{Int64},Vector{Float64}}
+is_inf_hor(tp::TPDistribution) = (tp.vals[1] == typemax(Int64))
 
 """
 Returns a vector of the mode-switch CMSSP actions
@@ -146,7 +147,7 @@ mutable struct OpenLoopVertex{D, C, AD, M}
     metadata::M
 end
 
-function OpenLoopVertex(state::CMSSPState{D,C}, action::AD, metadata::M)=zero(M) where {D, C, AD, M}
+function OpenLoopVertex(state::CMSSPState{D,C}, action::AD, metadata::M=zero(M)) where {D, C, AD, M}
     return OpenLoopVertex(state, state, action, TPDistribution([typemax(Int64)],[1.0], metadata))
 end
 
