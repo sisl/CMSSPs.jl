@@ -372,7 +372,11 @@ end
 
 
 function get_best_intramodal_action_infhor(policy::P, curr_state::C, target_state::C) where {P <: Policy, C}
+
+    mdp = policy.mdp
     temp_relative_state = get_relative_state(mdp, curr_state, target_state)
     best_action = action(policy, temp_relative_state)
+    
     return best_action
+
 end

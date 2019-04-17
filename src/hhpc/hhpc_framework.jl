@@ -181,12 +181,14 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
         # Check if 'terminal' state as per modal MDP
         @assert solver.curr_state.mode == next_target.pre_bridge_state.mode
         
+        # IMP - curr_action needs to be of type AD or AC
         if is_inf_hor(next_target.tp)
 
             # Infinite horizon time unconstrained action
             curr_action = get_best_intramodal_action_infhor(solver.modal_policies[solver.curr_state.mode],
                                                             solver.curr_state.continuous,
                                                             next_target.pre_bridge_state.continuous)
+            curr_action = curr_action.action
         else
             relative_time = mean(next_target.tp) - t
             # @show relative_time
@@ -203,10 +205,9 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
                                                          next_target.tp, 
                                                          solver.curr_state.continuous, 
                                                          next_target.pre_bridge_state.continuous)
+                curr_action = curr_action.action
             end
         end
-
-        curr_action = curr_action.action
 
         @show curr_action
         readline()

@@ -12,7 +12,8 @@ DREAMRModeAction(mode_action::HOP_ACTION) = DREAMRModeAction(mode_action, "")
 const DREAMRStateType{US} = CMSSPState{DREAMR_MODETYPE, US} where {US <: UAVState}
 const DREAMRActionType{UA} = CMSSPAction{DREAMRModeAction, UA} where {UA <: UAVAction}
 const DREAMRCMSSPType{US, UA} = CMSSP{DREAMR_MODETYPE, US, DREAMRModeAction, UA, Parameters} where {US <: UAVState, UA <: UAVAction}
-const DREAMRModalMDPType{US, UA} = ModalMDP{DREAMR_MODETYPE, US, UA, Parameters} where {US <: UAVState, UA <: UAVAction}
+const DREAMRFlightMDPType{US, UA} = ModalMDP{DREAMR_MODETYPE, US, UA, Parameters} where {US <: UAVState, UA <: UAVAction}
+const DREAMRHopoffMDPType = ModalMDP{DREAMR_MODETYPE, Nothing, Nonthing, Nothing}
 const DREAMROpenLoopVertex{US} = OpenLoopVertex{DREAMR_MODETYPE, US, DREAMRModeAction, DREAMRVertexMetadata} where {US <: UAVState}
 const DREAMRGraphTracker{US, UA} = GraphTracker{DREAMR_MODETYPE, US, DREAMRModeAction, UA, DREAMRVertexMetadata, DREAMRBookkeeping, RNG} where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
 const DREAMRModePair = Tuple{DREAMR_MODETYPE, DREAMR_MODETYPE}
@@ -92,7 +93,7 @@ function create_dreamr_cmssp{US,UA}(dynamics::UDM, goal_point::DREAMRStateType{U
     return DREAMRCMSSPType{US,UA}(actions, DREAMR_MODES, switch_mdp, goal_point, params)
 end
 
-function POMDPs.isterminal(mdp::DREAMRModalMDPType{US,UA}, relative_state::US) where {US <: UAVState, UA <: UAVAction}
+function POMDPs.isterminal(mdp::DREAMRFlightMDPType{US,UA}, relative_state::US) where {US <: UAVState, UA <: UAVAction}
     
     curr_pos_norm = point_norm(get_position(relative_state))
     curr_speed = get_speed(relative_state)
@@ -113,21 +114,21 @@ function isterminal(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateType{US},
             (curr_speed < mdp.params.scale_params.XYDOT_HOP_THRESH)
 end
 
-function HHPC.get_relative_state(mdp::DREAMRModalMDPType{US,UA}, source::US, target::US) where {US <: UAVState, UA <: UAVAction}
+function HHPC.get_relative_state(mdp::DREAMRFlightMDPType{US,UA}, source::US, target::US) where {US <: UAVState, UA <: UAVAction}
     return rel_state(source, target)
 end
 
 
 ## Conversion for multirotor - can add others as needed
-function POMDPs.convert_s(::Type{V}, s::MultiRotorUAVState, mdp::DREAMRModalMDPType{MultiRotorUAVState, MultiRotorUAVAction})
+function POMDPs.convert_s(::Type{V}, s::MultiRotorUAVState, mdp::DREAMRFlightMDPType{MultiRotorUAVState, MultiRotorUAVAction})
     v = SVector{4,Float64}(s.x, s.y, s.xdot, s.ydot)
 end
 
-function POMDPs.convert_s(::Type{MultiRotorUAVState}, v::AbstractVector{Float64}, mdp::DREAMRModalMDPType{MultiRotorUAVState, MultiRotorUAVAction})
+function POMDPs.convert_s(::Type{MultiRotorUAVState}, v::AbstractVector{Float64}, mdp::DREAMRFlightMDPType{MultiRotorUAVState, MultiRotorUAVAction})
     s = MultiRotorUAVState(v[1], v[2], v[3], v[4])
 end
 
-function POMDPs.reward(mdp::DREAMRModalMDPType{US, UA}, state::US, cont_action::UA, statep::US) where {US <: UAVState, UA <: UAVAction}
+function POMDPs.reward(mdp::DREAMRFlightMDPType{US, UA}, state::US, cont_action::UA, statep::US) where {US <: UAVState, UA <: UAVAction}
     
     cost = mdp.energy_time_alpha*mdp.params.cost_params.TIME_COEFFICIENT*mdp.params.time_params.MDP_TIMESTEP
     cost += dynamics_cost(mdp.params, state, statep)
@@ -136,7 +137,7 @@ function POMDPs.reward(mdp::DREAMRModalMDPType{US, UA}, state::US, cont_action::
 end
 
 # NEEDS TO BE BOUND
-function generate_sr(mdp::DREAMRModalMDPType{US,UA}, state::US, cont_action::UA, dynamics::UDM, 
+function generate_sr(mdp::DREAMRFlightMDPType{US,UA}, state::US, cont_action::UA, dynamics::UDM, 
                      rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, UDM <: UAVDynamicsModel. RNG <: AbstractRNG}
     
     statep = next_state(dynamics, state, cont_action, rng)
@@ -146,7 +147,7 @@ function generate_sr(mdp::DREAMRModalMDPType{US,UA}, state::US, cont_action::UA,
 end
 
 
-function HHPC.expected_reward(mdp::DREAMRModalMDPType{US,UA}, 
+function HHPC.expected_reward(mdp::DREAMRFlightMDPType{US,UA}, 
                               state::US, cont_action::UA, rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
     
     params = mdp.params
@@ -494,3 +495,24 @@ end
 # end
 
 # TODO : Create a fake deterministic policy for hopoff - in edge weight and get_best_intramodal_action
+struct DREAMRDeterministicPolicy <: Policy
+    dummy::Bool
+end
+
+DREAMRDeterministicPolicy() = DREAMRDeterministicPolicy(true)
+
+function HHPC.get_best_intramodal_action(policy::DREAMRDeterministicPolicy, curr_timestep::Int64,
+                                         tp_dist::TPDistribution, curr_state::DREAMRStateType{US},
+                                         target_state::DREAMRStateType{US}) where {US <: UAVState}
+    
+    # Just blindly return STAY - HOPOFF will be returned based on time
+    return CMSSPAction(STAY, 0)
+end
+
+
+
+
+
+function get_ride_mdp()
+    return DREAMRHopoffMDPType(RIDE, nothing, Vector{Nothing}(undef, 0))
+end
