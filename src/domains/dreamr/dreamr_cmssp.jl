@@ -2,36 +2,18 @@
 @enum DREAMR_MODETYPE FLIGHT=1 RIDE=2
 @enum HOP_ACTION HOPON=1 HOPOFF=2 STAY=3
 
+## Mode Info
+const DREAMR_MODES = [FLIGHT, RIDE]
+const DREAMR_GOAL_MODE = FLIGHT
+const DREAMR_MODE_ACTIONS = [HOPON, HOPOFF, STAY]
+
+
 struct DREAMRModeAction
     mode_action::HOP_ACTION
     car_id::String
 end
 
 DREAMRModeAction(mode_action::HOP_ACTION) = DREAMRModeAction(mode_action, "")
-
-const DREAMRStateType{US} = CMSSPState{DREAMR_MODETYPE, US} where {US <: UAVState}
-const DREAMRActionType{UA} = CMSSPAction{DREAMRModeAction, UA} where {UA <: UAVAction}
-const DREAMRCMSSPType{US, UA} = CMSSP{DREAMR_MODETYPE, US, DREAMRModeAction, UA, Parameters} where {US <: UAVState, UA <: UAVAction}
-const DREAMRFlightMDPType{US, UA} = ModalMDP{DREAMR_MODETYPE, US, UA, Parameters} where {US <: UAVState, UA <: UAVAction}
-const DREAMRHopoffMDPType = ModalMDP{DREAMR_MODETYPE, Nothing, Nonthing, Nothing}
-const DREAMROpenLoopVertex{US} = OpenLoopVertex{DREAMR_MODETYPE, US, DREAMRModeAction, DREAMRVertexMetadata} where {US <: UAVState}
-const DREAMRGraphTracker{US, UA} = GraphTracker{DREAMR_MODETYPE, US, DREAMRModeAction, UA, DREAMRVertexMetadata, DREAMRBookkeeping, RNG} where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
-const DREAMRModePair = Tuple{DREAMR_MODETYPE, DREAMR_MODETYPE}
-
-## Context
-struct DREAMRContextSet
-    curr_epoch::Int64
-    curr_epoch_dict::Dict
-    curr_car_id::String
-end
-
-## Mode Info
-const DREAMR_MODES = [FLIGHT, RIDE]
-const DREAMR_GOAL_MODE = FLIGHT
-const DREAMR_MODE_ACTIONS = [HOPON, HOPOFF, STAY]
-
-const DREAMRSolverType{US, UA} = HHPCSolver{DREAMR_MODETYPE, US, DREAMRModeAction, UA, DREAMRContextSet, Parameters} where {US <: UAVState, UA <: UAVAction}
-
 
 ## Car route stuff
 struct DREAMRVertexMetadata
@@ -42,16 +24,39 @@ end
 Base.zero(DREAMRVertexMetadata) = DREAMRVertexMetadata("", "")
 
 struct DREAMRBookkeeping
-    active_car_to_idx_ranges::Dict{String, MVector{2, MVector{2, Int64}}} # Maps car name to range of vertices that represent hopon
-    route_vert_id_to_idx_pair::Dict{String, MVector{2, Int64}} # Maps a specific route ID (car-id+"-"+vertex_id) to the indices of hopon and hopoff versions
+    active_car_to_idx_ranges::Dict{String, MVector{2, MVector{2,Int64}}} # Maps car name to range of vertices that represent hopon
+    route_vert_id_to_idx_pair::Dict{String, MVector{2,Int64}} # Maps a specific route ID (car-id+"-"+vertex_id) to the indices of hopon and hopoff versions
     goal_vertex_idx::Int64
 end
+DREAMRBookkeeping() = DREAMRBookkeeping(Dict{String, MVector{2, MVector{2,Int64}}}(), Dict{String, MVector{2,Int64}}(), 0)
 
-DREAMRBookkeeping() = DREAMRBookkeeping(Dict{String, MVector{2, MVector{2, Int64}}}, Dict{String, MVector{2, Int64}}(), 0)
+
+
+## Context
+struct DREAMRContextSet
+    curr_epoch::Int64
+    episode_dict::Dict
+    curr_car_id::String
+end
+
+function get_dreamr_episode_context(ep_dict::Dict)
+    return DREAMRContextSet(0, ep_dict, "")
+end
+
+
+const DREAMRStateType{US} = CMSSPState{DREAMR_MODETYPE, US} where {US <: UAVState}
+const DREAMRActionType{UA} = CMSSPAction{DREAMRModeAction, UA} where {UA <: UAVAction}
+const DREAMRCMSSPType{US,UA} = CMSSP{DREAMR_MODETYPE, US, DREAMRModeAction, UA, Parameters} where {US <: UAVState, UA <: UAVAction}
+const DREAMRFlightMDPType{US,UA} = ModalMDP{DREAMR_MODETYPE, US, UA, Parameters} where {US <: UAVState, UA <: UAVAction}
+const DREAMRHopoffMDPType = ModalMDP{DREAMR_MODETYPE, Nothing, Nothing, Parameters}
+const DREAMROpenLoopVertex{US} = OpenLoopVertex{DREAMR_MODETYPE, US, DREAMRModeAction, DREAMRVertexMetadata} where {US <: UAVState}
+const DREAMRGraphTracker{US,UA} = GraphTracker{DREAMR_MODETYPE, US, DREAMRModeAction, DREAMRVertexMetadata, DREAMRBookkeeping, RNG} where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
+const DREAMRModePair = Tuple{DREAMR_MODETYPE, DREAMR_MODETYPE}
+const DREAMRSolverType{US, UA} = HHPCSolver{DREAMR_MODETYPE, US, DREAMRModeAction, UA, DREAMRContextSet, Parameters, DREAMRVertexMetadata, DREAMRBookkeeping} where {US <: UAVState, UA <: UAVAction}
 
 
 # This is only really needed for baseline
-function get_dreamr_actions{UA}(dynamics::UDM) where {UA <: UAVAction, UDM <: UAVDynamicsModel}
+function get_dreamr_actions(::Type{UA}, params::Parameters) where {UA <: UAVAction}
 
     actions = Vector{DREAMRActionType{UA}}(undef, 0)
     idx = 1
@@ -60,7 +65,7 @@ function get_dreamr_actions{UA}(dynamics::UDM) where {UA <: UAVAction, UDM <: UA
         idx += 1
     end
 
-    uav_dynamics_actions = get_uav_dynamics_actions(dynamics)
+    uav_dynamics_actions = get_uav_dynamics_actions(UA, params)
     for uavda in uav_dynamics_actions
         push!(actions, DREAMRActionType(uavda, idx))
         idx += 1
@@ -85,12 +90,14 @@ function get_dreamr_mdp()
     return TabularMDP(T, R, 1.0)
 end
 
-function create_dreamr_cmssp{US,UA}(dynamics::UDM, goal_point::DREAMRStateType{US}, params::Parameters) where {US <: UAVState, UA <: UAVAction, UDM <: UAVDynamicsModel}
+function create_dreamr_cmssp(::Type{US}, ::Type{UA},
+                             goal_point::Point, params::Parameters) where {US <: UAVState, UA <: UAVAction}
 
-    actions = get_dreamr_actions(dynamics)
+    actions = get_dreamr_actions(UA, params)
     switch_mdp = get_dreamr_mdp()
+    goal_state = DREAMRStateType{US}(FLIGHT, get_state_at_rest(US, goal_point))
 
-    return DREAMRCMSSPType{US,UA}(actions, DREAMR_MODES, switch_mdp, goal_point, params)
+    return DREAMRCMSSPType{US,UA}(actions, DREAMR_MODES, switch_mdp, goal_state, params)
 end
 
 function POMDPs.isterminal(mdp::DREAMRFlightMDPType{US,UA}, relative_state::US) where {US <: UAVState, UA <: UAVAction}
@@ -102,12 +109,13 @@ function POMDPs.isterminal(mdp::DREAMRFlightMDPType{US,UA}, relative_state::US) 
         (curr_speed < mdp.params.scale_params.XYDOT_HOP_THRESH)
 end
 
-# Needs to be bound at top-level
-function isterminal(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateType{US},
-                    goal_point::Point) where {US <: UAVState, UA <: UAVAction}
+
+function POMDPs.isterminal(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateType{US}) where {US <: UAVState, UA <: UAVAction}
     
     curr_point = get_position(state)
     curr_speed = get_speed(relative_state)
+    goal_point
+
     dist = point_dist(curr_point, goal_point)
 
     return (state.mode == FLIGHT) && (dist < mdp.params.time_params.MDP_TIMESTEP*mdp.params.scale_params.HOP_DISTANCE_THRESHOLD) &&
@@ -120,8 +128,8 @@ end
 
 
 ## Conversion for multirotor - can add others as needed
-function POMDPs.convert_s(::Type{V}, s::MultiRotorUAVState, mdp::DREAMRFlightMDPType{MultiRotorUAVState, MultiRotorUAVAction})
-    v = SVector{4,Float64}(s.x, s.y, s.xdot, s.ydot)
+function POMDPs.convert_s(::Type{V}, s::MultiRotorUAVState, mdp::DREAMRFlightMDPType{MultiRotorUAVState, MultiRotorUAVAction}) where V
+    v = [s.x, s.y, s.xdot, s.ydot]
 end
 
 function POMDPs.convert_s(::Type{MultiRotorUAVState}, v::AbstractVector{Float64}, mdp::DREAMRFlightMDPType{MultiRotorUAVState, MultiRotorUAVAction})
@@ -130,21 +138,39 @@ end
 
 function POMDPs.reward(mdp::DREAMRFlightMDPType{US, UA}, state::US, cont_action::UA, statep::US) where {US <: UAVState, UA <: UAVAction}
     
-    cost = mdp.energy_time_alpha*mdp.params.cost_params.TIME_COEFFICIENT*mdp.params.time_params.MDP_TIMESTEP
+    cost = mdp.params.cost_params.TIME_COEFFICIENT*mdp.params.time_params.MDP_TIMESTEP
     cost += dynamics_cost(mdp.params, state, statep)
     
     return -cost
 end
 
-# NEEDS TO BE BOUND
-function generate_sr(mdp::DREAMRFlightMDPType{US,UA}, state::US, cont_action::UA, dynamics::UDM, 
-                     rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, UDM <: UAVDynamicsModel. RNG <: AbstractRNG}
+
+function POMDPs.generate_sr(mdp::DREAMRFlightMDPType{US,UA}, state::US, cont_action::UA, 
+                            rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
     
-    statep = next_state(dynamics, state, cont_action, rng)
-    reward = reward(mdp, state, cont_action, statep)
+    statep = next_state(mdp.params, state, cont_action, rng)
+    reward = POMDPs.reward(mdp, state, cont_action, statep)
     
     return (statep, reward)
 end
+
+
+function get_cf_mdp(::Type{US}, ::Type{UA},
+                    params::Parameters, beta::Float64) where {US <:UAVState, UA <: UAVAction}
+
+    uav_dynamics_actions = get_uav_dynamics_actions(UA, params)
+
+    return DREAMRFlightMDPType{US,UA}(FLIGHT, params, uav_dynamics_actions, beta, params.time_params.HORIZON_LIM)
+end
+
+
+function get_uf_mdp(::Type{US}, ::Type{UA}, params::Parameters) where {US <:UAVState, UA <: UAVAction}
+
+    uav_dynamics_actions = get_uav_dynamics_actions(UA, params)
+
+    return DREAMRFlightMDPType{US,UA}(FLIGHT, params, uav_dynamics_actions) # beta = 1 and horizon = 0
+end
+
 
 
 function HHPC.expected_reward(mdp::DREAMRFlightMDPType{US,UA}, 
@@ -154,11 +180,11 @@ function HHPC.expected_reward(mdp::DREAMRFlightMDPType{US,UA},
     avg_rew = 0.0
     
     for i = 1:params.scale_params.MC_GENERATIVE_NUMSAMPLES
-        (_, r) = next_state_reward(mdp,state, cont_action, rng)
+        (_, r) = generate_sr(mdp, state, cont_action, rng)
         avg_rew += r
     end
     
-    avg_rew /= params.num_generative_samples
+    avg_rew /= params.scale_params.MC_GENERATIVE_NUMSAMPLES
     return avg_rew
 end
 
@@ -183,7 +209,7 @@ function get_arrival_time_distribution(mean_time::Float64, params::Parameters, r
     
     # Returns a TPDist
     time_dist = Normal(mean_time, params.time_params.CAR_TIME_STD)
-    temp_tp_dict = Dict{Int64, Float64}()
+    temp_tp_dict = Dict{Int64,Float64}()
 
 
     for j = 1:params.time_params.MC_TIME_NUMSAMPLES
@@ -211,10 +237,10 @@ function get_arrival_time_distribution(mean_time::Float64, params::Parameters, r
 end
 
 
-function HHPC.generate_bridge_sample_set!(cmssp::DREAMRCMSSPType{US,UA}, vertex::DREAMROpenLoopVertex,
+function HHPC.generate_bridge_sample_set!(cmssp::DREAMRCMSSPType, vertex::DREAMROpenLoopVertex,
                                          mode_pair::DREAMRModePair,
-                                         context_set::DREAMRContextSet, graph_tracker::DREAMRGraphTracker{US, UA},
-                                         rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
+                                         context_set::DREAMRContextSet, graph_tracker::DREAMRGraphTracker,
+                                         rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
     # NOTE - Will never actually generate anything; only get neighbour idxs
     params = cmssp.params
@@ -222,6 +248,8 @@ function HHPC.generate_bridge_sample_set!(cmssp::DREAMRCMSSPType{US,UA}, vertex:
     nbrs_to_add = Vector{Int64}(undef, 0)
 
     if vertex.state.mode == FLIGHT # If it is a drone or post-hopoff vertex
+
+        @assert mode_pair == (FLIGHT, RIDE)
 
         # Iterate over cars
         for (car_id, ranges) in graph_tracker.bookkeeping.active_car_to_idx_ranges
@@ -243,6 +271,7 @@ function HHPC.generate_bridge_sample_set!(cmssp::DREAMRCMSSPType{US,UA}, vertex:
     else
         # It is a car route vertex
         # Only add hopoff vertices for that car
+        @assert mode_pair == (RIDE, FLIGHT)
         @assert vertex.metadata.car_id != ""
 
         hopoff_vert_range = graph_tracker.bookkeeping.active_car_to_idx_ranges[vertex.metadata.car_id][2]
@@ -263,7 +292,7 @@ function HHPC.generate_bridge_sample_set!(cmssp::DREAMRCMSSPType{US,UA}, vertex:
 end
 
 
-function HHPC.generate_next_valid_modes(cmssp::DREAMRCMSSPType{US, UA}, mode::DREAMR_MODETYPE, context_set::DREAMRContextSet)
+function HHPC.generate_next_valid_modes(cmssp::DREAMRCMSSPType, mode::DREAMR_MODETYPE, context_set::DREAMRContextSet)
 
     if mode == FLIGHT
         return [(DREAMRModeAction(HOPON), RIDE)]
@@ -277,7 +306,8 @@ function HHPC.update_vertices_with_context!(cmssp::DREAMRCMSSPType{US, UA}, grap
                                             switch::DREAMRModePair, context_set::DREAMRContextSet) where {US <: UAVState, UA <: UAVAction}
 
     # Iterate over cars, add if new or update if old
-    epoch_cars = epoch["car-info"]
+    curr_epoch_dict = context_set.episode_dict[context_set.curr_epoch]
+    epoch_cars = curr_epoch_dict["car-info"]
 
     keys_to_delete = Vector{String}(undef, 0)
 
@@ -371,10 +401,10 @@ function HHPC.update_vertices_with_context!(cmssp::DREAMRCMSSPType{US, UA}, grap
                     last_route_idx += 1
 
                     # can copy data from tmpver, just change mode and action
-                    state = tmpver.pre_bridge_state.continuous
+                    cont_state = tmpver.pre_bridge_state.continuous
 
-                    pre_bridge_state = DREAMRStateType{US}(RIDE, state)
-                    post_bridge_state = DREAMRStateType{US}(FLIGHT, state)
+                    pre_bridge_state = DREAMRStateType{US}(RIDE, cont_state)
+                    post_bridge_state = DREAMRStateType{US}(FLIGHT, cont_state)
 
                     new_vertex = DREAMROpenLoopVertex{US}(post_bridge_state, pre_bridge_state, HOPOFF, tmpver.tp, tmpver.metadata)
                     add_vertex!(graph_tracker.curr_graph, new_vertex)
@@ -398,23 +428,22 @@ function HHPC.update_vertices_with_context!(cmssp::DREAMRCMSSPType{US, UA}, grap
     end
 end
 
-# Needs to be BOUND
-function HHPC.update_context_set!(cmssp::DREAMRCMSSPType, context_set::DREAMRContextSet, 
-                             episode_dict::Dict, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+function HHPC.update_context_set!(cmssp::DREAMRCMSSPType, context_set::DREAMRContextSet,
+                                  rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
     # Update epoch number
     context_set.curr_epoch+=1
 
-    # Update context set
-    context_set.curr_epoch_dict = episode_dict[context_set.curr_epoch]
 end
 
 
-function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US, UA}, state::DREAMRStateType{US}, a::DREAMRActionType{UA}, t::Int64,
-                             context_set::DREAMRContextSet, dynamics::UDM, rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, UDM <: UAVDynamicsModel, RNG <: AbstractRNG}
+function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateType{US}, a::DREAMRActionType{UA}, t::Int64,
+                             context_set::DREAMRContextSet, rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
 
     params = cmssp.params
-    epoch_cars = context_set.curr_epoch_dict["car-info"]
+
+    curr_epoch_dict = context_set.episode_dict[context_set.curr_epoch]
+    epoch_cars = curr_epoch_dict["car-info"]
 
     curr_mode = state.mode
     curr_cont_state = state.continuous
@@ -426,8 +455,8 @@ function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US, UA}, state::DREAMRState
 
         @assert curr_mode == FLIGHT
 
-        new_uav_state = next_state(dynamics, curr_cont_state, a.action, rng)
-        reward += -dynamics_cost(dynamics, curr_cont_state, new_uav_state)
+        new_uav_state = next_state(params, curr_cont_state, a.action, rng)
+        reward += -dynamics_cost(params, curr_cont_state, new_uav_state)
         next_dreamr_state = DREAMRStateType{US}(FLIGHT, new_uav_state)
 
     else
@@ -488,31 +517,46 @@ function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US, UA}, state::DREAMRState
     return (next_dreamr_state, reward, failed_mode_switch)
 end
 
-# function HHPC.get_bridging_action(cmssp::DREAMRCMSSPType{US, UA}, state::DREAMRStateType{US},
-#                                   next_target::DREAMROpenLoopVertex{US}) where {US <: UAVState, UA <: UAVAction}
 
-#     return next_target.bridging_action
-# end
-
-# TODO : Create a fake deterministic policy for hopoff - in edge weight and get_best_intramodal_action
-struct DREAMRDeterministicPolicy <: Policy
-    dummy::Bool
+function HHPC.display_context_future(context_set::DREAMRContextSet, future_epoch::Int64)
+    println(context_set.episode_dict[future_epoch])
 end
 
-DREAMRDeterministicPolicy() = DREAMRDeterministicPolicy(true)
+# Return the vertex bridging action and metadata car id
+function HHPC.get_bridging_action(vertex::DREAMROpenLoopVertex)
+    return DREAMRModeAction(vertex.bridging_action, vertex.metadata.car_id)
+end
+
+
+function get_ride_mdp(params::Parameters)
+    return DREAMRHopoffMDPType(RIDE, params, Vector{Nothing}(undef, 0))
+end
+
+# Create a fake deterministic policy for hopoff - override methods
+struct DREAMRDeterministicPolicy <: Policy
+    mdp::Union{MDP,POMDP}
+end
+
+DREAMRDeterministicPolicy(params::Parameters) = DREAMRDeterministicPolicy(get_ride_mdp(params))
+
+HHPC.get_mdp(ddp::DREAMRDeterministicPolicy) = ddp.mdp
 
 function HHPC.get_best_intramodal_action(policy::DREAMRDeterministicPolicy, curr_timestep::Int64,
-                                         tp_dist::TPDistribution, curr_state::DREAMRStateType{US},
-                                         target_state::DREAMRStateType{US}) where {US <: UAVState}
+                                         tp_dist::TPDistribution, curr_state::US,
+                                         target_state::US) where {US <: UAVState}
     
     # Just blindly return STAY - HOPOFF will be returned based on time
-    return CMSSPAction(STAY, 0)
+    return CMSSPAction(STAY, 3)
 end
 
 
 
-
-
-function get_ride_mdp()
-    return DREAMRHopoffMDPType(RIDE, nothing, Vector{Nothing}(undef, 0))
+function HHPC.horizon_weighted_value(policy::DREAMRDeterministicPolicy, curr_timestep::Int64,
+                                    tp_dist::TPDistribution, curr_state::US,
+                                    target_state::US) where {US <: UAVState}
+    
+    # Just the cost corresponding to time difference
+    # Return -Inf for minvalue because will never abort
+    params = policy.mdp.params
+    return -params.cost_params.TIME_COEFFICIENT*(mean(tp_dist) - curr_timestep), -Inf
 end

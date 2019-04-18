@@ -3,7 +3,7 @@ The overall HHPC framework solver object.
 
 Attributes:
     - `graph_tracker::GraphTracker{D,C,AD}`
-    - `modal_policies::Dict{D,ModalHorizonPolicy}` A map from the mode to the modal policies (in and out-horizon)
+    - `modal_policies::Dict{D,Policy}` A map from the mode to the modal policies (in and out-horizon)
     - `modal_mdps::Dict{D,ModalMDP{D,C,AC}}` A map from the mode to the regional MDP
     - `replan_time_threshold::Int64` The Delta T parameter for periodic replanning (discrete time-steps)
     - `heuristic::Function` The heuristic method for the global layer
@@ -13,8 +13,7 @@ Attributes:
 """
 mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
     graph_tracker::GraphTracker{D,C,AD,M,B,RNG}
-    modal_policies::Dict{D,ModalHorizonPolicy}
-    modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}
+    modal_policies::Dict{D,Policy}
     replan_time_threshold::Int64
     goal_modes::Vector{D}
     curr_state::CMSSPState{D,C}
@@ -24,23 +23,23 @@ mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
     max_steps::Int64
 end
 
-function HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict{D,ModalHorizonPolicy},
-                                            modal_mdps::Dict{D,ModalMDP{D,C,AC,P}}, deltaT::Int64, goal_modes::Vector{D},
+function HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict{D,Policy},
+                                            deltaT::Int64, goal_modes::Vector{D},
                                             start_state::CMSSPState{D,C}, start_context_set::CS, 
                                             bookkeeping::B, rng::RNG=Random.GLOBAL_RNG,
                                             heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG}
-    return HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(GraphTracker{D, C, AD, M, B, RNG}(num_samples, bookkeeping, rng),
-                                            modal_policies, modal_mdps, deltaT, 
-                                            goal_modes, start_state, start_context_set, rng, heuristic, max_steps)
+    return HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(GraphTracker{D,C,AD,M,B,RNG}(num_samples, bookkeeping, rng),
+                                              modal_policies, deltaT, goal_modes,
+                                              start_state, start_context_set, rng, heuristic, max_steps)
 end
 
 
-function set_start_state_context_set!(solver::HHPCSolver, start_state::CMSSPState{D,C}, start_context_set::CS) where {D, C, CS}
+function set_start_state_context_set!(solver::HHPCSolver, start_state::CMSSPState{D,C}, start_context_set::CS) where {D,C,CS}
     solver.curr_state = start_state
     solver.curr_context_set = start_context_set
 end
 
-function set_open_loop_samples(solver::HHPCSolver, num_samples::Int64)
+function set_open_loop_samples!(solver::HHPCSolver, num_samples::Int64)
     solver.graph_tracker.num_samples = num_samples
 end
 
@@ -68,8 +67,8 @@ function edge_weight_fn(solver::HHPCSolver, cmssp::CMSSP,
     # If inf, have modal policy overload it!
     mode = u.state.mode
     policy = solver.modal_policies[mode]
-    mdp = policy.in_horizon_policy.mdp
-    temp_curr_time = convert(Int64,round(mean(u.tp)))
+    mdp = get_mdp(policy)
+    temp_curr_time = convert(Int64, round(mean(u.tp)))
     weighted_value, weighted_minvalue = horizon_weighted_value(policy,
                                             temp_curr_time,
                                             v.tp,
@@ -122,8 +121,6 @@ end
     @req generate_goal_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D, ::CS)
     @req generate_bridge_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::Tuple{D,AD,D}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
-    @req get_goal_sample_idxs(::P, ::typeof(solver.graph_tracker), ::OpenLoopVertex{D, C, AD, M})
-    @req get_bridge_sample_idxs(::P, ::typeof(solver.graph_tracker), ::Tuple{D, D}, ::OpenLoopVertex{D, C, AD, M})
     @req zero(::M)    
 
     # Local layer requirements
@@ -133,8 +130,10 @@ end
     @req convert_s(::Type{C},::V where V <: AbstractVector{Float64},::ModalMDP{D,C,AC,PR})
 
     # HHPC requirements
-    @req simulate_cmssp(::P, ::S, ::A, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
+    @req simulate_cmssp!(::P, ::S, ::A, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
     @req update_context_set!(::P, ::CS, ::RNG where {RNG <: AbstractRNG})
+    @req get_bridging_action(::OpenLoopVertex{D, C, AD, M})
+    @req display_context_future(::CS, ::Int64)
 
 end
 
@@ -153,7 +152,7 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
     last_plan_time = 0
 
     # Defs needed for open-loop-plan
-    edge_weight(u::OpenLoopVertex,v::OpenLoopVertex) = edge_weight_fn(solver, cmssp, u, v)
+    edge_weight(u::OpenLoopVertex, v::OpenLoopVertex) = edge_weight_fn(solver, cmssp, u, v)
 
     # Diagnostic info
     total_cost = 0.0
@@ -180,33 +179,21 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
 
         # Check if 'terminal' state as per modal MDP
         @assert solver.curr_state.mode == next_target.pre_bridge_state.mode
-        
-        # IMP - curr_action needs to be of type AD or AC
-        if is_inf_hor(next_target.tp)
 
-            # Infinite horizon time unconstrained action
-            curr_action = get_best_intramodal_action_infhor(solver.modal_policies[solver.curr_state.mode],
-                                                            solver.curr_state.continuous,
-                                                            next_target.pre_bridge_state.continuous)
-            curr_action = curr_action.action
+        relative_time = mean(next_target.tp) - t
+
+        if relative_time <= 0.5
+
+            curr_action = get_bridging_action(next_target)
+            
         else
-            relative_time = mean(next_target.tp) - t
-            # @show relative_time
 
-            if relative_time < 0.5 
-                # TODO: Guaranteed to not be truly terminal state
-                # Action is just the bridging action
-                # curr_action = get_bridging_action(solver.cmssp, solver.curr_state, next_target)
-                curr_action = next_target.bridging_action
-            else
-                # Assuming finite horizon now - handle internally
-                curr_action = get_best_intramodal_action(solver.modal_policies[solver.curr_state.mode], 
-                                                         t,
-                                                         next_target.tp, 
-                                                         solver.curr_state.continuous, 
-                                                         next_target.pre_bridge_state.continuous)
-                curr_action = curr_action.action
-            end
+            curr_action = get_best_intramodal_action(solver.modal_policies[solver.curr_state.mode], 
+                                                     t,
+                                                     next_target.tp, 
+                                                     solver.curr_state.continuous, 
+                                                     next_target.pre_bridge_state.continuous)
+            curr_action = curr_action.action
         end
 
         @show curr_action
@@ -245,5 +232,5 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
     end
 
     # TODO : Diagnostics
-    return total_cost, successful
+    return total_cost, t, successful
 end

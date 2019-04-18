@@ -26,6 +26,8 @@ using LocalApproximationValueIteration
  
 
 export
+    TPDistribution,
+    is_inf_hor,
     CMSSPState,
     CMSSPAction,
     CMSSP,
@@ -38,8 +40,6 @@ export
     set_modeswitch_mdp!,
     mode_index,
     mode_actionindex,
-    TPDistribution,
-    is_inf_hor,
     BridgeSample,
     OpenLoopVertex
 

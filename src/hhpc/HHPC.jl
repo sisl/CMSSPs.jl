@@ -34,15 +34,14 @@ export
     GraphTracker,
     metadatatype,
     bookkeepingtype,
-    open_loop_plan!,
-    update_graph_tracker!
+    open_loop_plan!
 
 
 # Closed-loop exports
 export
     ModalHorizonPolicy,
-    ModalAction,
     ModalStateAugmented,
+    ModalAction,
     ModalMDP,
     set_horizon_limit!,
     compute_terminalcost_localapprox!,
@@ -51,8 +50,7 @@ export
     compute_min_value_per_horizon_localapprox!,
     horizon_weighted_value,
     horizon_weighted_actionvalue,
-    get_best_intramodal_action,
-    get_best_intramodal_action_infhor
+    get_best_intramodal_action
 
 # HHPC framework
 # Requirements
@@ -60,7 +58,7 @@ export
 export
     HHPCSolver,
     set_start_state_context_set!,
-    set_open_loop_samples
+    set_open_loop_samples!
 
 # Utils
 export
@@ -76,19 +74,21 @@ export
     # Local
     expected_reward,
     get_relative_state,
+    get_mdp,
     # Global
     update_vertices_with_context!,
     generate_goal_sample_set!,
     generate_next_valid_modes,
     generate_bridge_sample_set!,
     # HHPC
-    simulate_cmssp,
+    simulate_cmssp!,
     update_context_set!,
-    display_context_future,
+    display_context_future
 
 # Local reqs
 function get_relative_state end
 function expected_reward end
+function get_mdp end
 # Global reqs
 function update_vertices_with_context! end
 function generate_goal_sample_set! end
@@ -97,8 +97,8 @@ function generate_bridge_sample_set! end
 # HHPC reqs
 function simulate_cmssp! end
 function update_context_set! end
-function display_context_future end
 function get_bridging_action end
+function display_context_future end
 
 
 include("global_layer.jl")

@@ -47,23 +47,26 @@ using CMSSPs.HHPC
 #     generate_start_context_set
 
 
-# DREAME exports
-
-
-# General required exports
+# DREAMR exports
 export
-    # Local
-    expected_reward,
-    get_relative_state,
-    # Global
-    update_vertices_with_context!,
-    generate_goal_sample_set,
-    generate_next_valid_modes,
-    generate_bridge_sample_set,
-    # HHPC
-    simulate_cmssp,
-    update_contextset!,
-    display_context_future
+    Parameters,
+    parse_params,
+    UAVDynamicsModel,
+    UAVState,
+    UAVAction,
+    MultiRotorUAVState,
+    MultiRotorUAVAction,
+    MultiRotorUAVDynamicsModel,
+    DREAMR_MODETYPE,
+    HOP_ACTION,
+    get_dreamr_actions,
+    get_dreamr_mdp,
+    create_dreamr_cmssp,
+    get_dreamr_episode_context,
+    get_cf_mdp,
+    get_uf_mdp,
+    get_ride_mdp,
+    DREAMRDeterministicPolicy
 
 
 # include("toy_2d.jl")

@@ -10,8 +10,8 @@ Attributes:
     - `curr_soln_path_idxs::Vector{Int64}` The in-order list of indices from current start to current goal
     - `num_samples::Int64` The N parameter for the number of bridge samples to generate per mode switch
 """
-mutable struct GraphTracker{D, C, AD, M, B, RNG <: AbstractRNG}
-    curr_graph::SimpleVListGraph{OpenLoopVertex{D, C, AD, M, B}}
+mutable struct GraphTracker{D,C,AD,M,B,RNG <: AbstractRNG}
+    curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD,M}}
     curr_start_idx::Int64
     curr_goal_idx::Int64
     curr_soln_path_idxs::Vector{Int64}
@@ -20,8 +20,8 @@ mutable struct GraphTracker{D, C, AD, M, B, RNG <: AbstractRNG}
     rng::RNG
 end
 
-metadatatype(::GraphTracker{D, C, AD, M, B, RNG}) where {D, C, AD, M, B, RNG <: AbstractRNG} = M
-bookkeepingtype(::GraphTracker{D, C, AD, M, B, RNG}) where {D, C, AD, M, B, RNG <: AbstractRNG} = B
+metadatatype(::GraphTracker{D,C,AD,M,B,RNG}) where {D,C,AD,M,B,RNG <: AbstractRNG} = M
+bookkeepingtype(::GraphTracker{D,C,AD,M,B,RNG}) where {D,C,AD,M,B,RNG <: AbstractRNG} = B
 
 # TODO : Do we need the types sent as args?
 # function GraphTracker(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
@@ -30,8 +30,8 @@ bookkeepingtype(::GraphTracker{D, C, AD, M, B, RNG}) where {D, C, AD, M, B, RNG 
 #                         0,0,Vector{Int64}(undef,0),N,rng)
 # end
 
-function GraphTracker{D, C, AD, M, B, RNG}(N::Int64, bookkeeping::B, rng::RNG=Random.GLOBAL_RNG) where {D, C, AD, M, B, RNG <: AbstractRNG}
-    return GraphTracker{D, C, AD, M, B, RNG}(SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}(),
+function GraphTracker{D,C,AD,M,B,RNG}(N::Int64, bookkeeping::B, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,M,B,RNG <: AbstractRNG}
+    return GraphTracker{D,C,AD,M,B,RNG}(SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}(),
                         Dict{Tuple{D,D},MVector{2,Int64}}(),
                         0, 0, Vector{Int64}(undef, 0), N, bookkeeping, rng)
 end

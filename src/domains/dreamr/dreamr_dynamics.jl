@@ -22,7 +22,7 @@ end
 
 function rel_state(source::MultiRotorUAVState, target::MultiRotorUAVState)
     return MultiRotorUAVState(source.x - target.x, source.y - target.y, source.xdot, source.ydot)
-
+end
 """
 Represents control action for simple 2D multirotor, with acceleration in each direction.
 """
@@ -46,15 +46,15 @@ end
 Define a dynamics model where t is the timestep duration, params is the collection of system parameters,
 and sig is the standard deviation along each axis (sig_xy) is vector of standard deviations for each corresponding axis
 """
-function MultiRotorUAVDynamicsModel(t::Float64, sig::Float64, params::Parameters)
+function MultiRotorUAVDynamicsModel(params::Parameters)
     # Generate diagonal covariance matrix
-    noise = Distributions.MvNormal([sig,sig])
-    return MultiRotorUAVDynamicsModel(t, noise, params)
+    noise = Distributions.MvNormal([params.scale_params.ACC_NOISE_STD, params.scale_params.ACC_NOISE_STD])
+    return MultiRotorUAVDynamicsModel(params.time_params.MDP_TIMESTEP, noise, params)
 end
 
-function MultiRotorUAVDynamicsModel(t::Float64, sig_xy::StaticVector{2,Float64}, params::Parameters)
+function MultiRotorUAVDynamicsModel(sig_xy::StaticVector{2,Float64}, params::Parameters)
     # Generate diagonal covariance matrix
-    noise = Distributions.MvNormal([sig_xy[1],sig_xy[2]])
+    noise = Distributions.MvNormal([sig_xy[1], sig_xy[2]])
     return MultiRotorUAVDynamicsModel(t, noise, params)
 end
 
@@ -63,14 +63,14 @@ end
 
 Compiles a vector of all multirotor acceleration actions within limits, based on the resolution parameters
 """
-function get_uav_dynamics_actions(model::MultiRotorUAVDynamicsModel)
+function get_uav_dynamics_actions(::Type{MultiRotorUAVAction}, params::Parameters)
 
-    multirotor_actions = Vector{MultiRotorUAVAction}(undef,0)
-    acc_vals = range(-model.params.scale_params.ACCELERATION_LIM,stop=model.params.scale_params.ACCELERATION_LIM,length=model.params.scale_params.ACCELERATION_NUMVALS)
+    multirotor_actions = Vector{MultiRotorUAVAction}(undef, 0)
+    acc_vals = range(-params.scale_params.ACCELERATION_LIM, stop=params.scale_params.ACCELERATION_LIM, length=params.scale_params.ACCELERATION_NUMVALS)
 
     for xddot in acc_vals
         for yddot in acc_vals
-            push!(multirotor_actions,MultiRotorUAVAction(xddot, yddot))
+            push!(multirotor_actions, MultiRotorUAVAction(xddot, yddot))
         end
     end
 
@@ -83,12 +83,14 @@ end
 Generate a MultiRotorUAVState with a random location inside the grid and at rest
 """
 function generate_start_state(model::MultiRotorUAVDynamicsModel, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
-    x = rand(rng,Uniform(-model.params.scale_params.XY_LIM,model.params.scale_params.XY_LIM))
-    y = rand(rng,Uniform(-model.params.scale_params.XY_LIM,model.params.scale_params.XY_LIM))
+    
+    x = rand(rng, Uniform(-model.params.scale_params.XY_LIM, model.params.scale_params.XY_LIM))
+    y = rand(rng, Uniform(-model.params.scale_params.XY_LIM, model.params.scale_params.XY_LIM))
+    
     xdot = 0.
     ydot = 0.
 
-    return MultiRotorUAVState(x,y,xdot,ydot)
+    return MultiRotorUAVState(x, y, xdot, ydot)
 end
 
 """
@@ -125,12 +127,35 @@ function apply_controls(model::MultiRotorUAVDynamicsModel, state::MultiRotorUAVS
     true_yddot = (ydot - state.ydot)/model.timestep
 
     x = state.x + state.xdot*model.timestep + 0.5*true_xddot*(model.timestep^2)
-    x = clamp(x,-model.params.scale_params.XY_LIM, model.params.scale_params.XY_LIM)
-    y = state.y + state.ydot*model.timestep + 0.5*true_yddot*(model.timestep^2)
-    y = clamp(y,-model.params.scale_params.XY_LIM, model.params.scale_params.XY_LIM)
+    x = clamp(x, -model.params.scale_params.XY_LIM, model.params.scale_params.XY_LIM)
 
-    return MultiRotorUAVState(x,y,xdot,ydot)
+    y = state.y + state.ydot*model.timestep + 0.5*true_yddot*(model.timestep^2)
+    y = clamp(y, -model.params.scale_params.XY_LIM, model.params.scale_params.XY_LIM)
+
+    return MultiRotorUAVState(x, y, xdot, ydot)
 end
+
+function apply_controls(params::Parameters, state::MultiRotorUAVState, xddot::Float64, yddot::Float64)
+
+    timestep = params.time_params.MDP_TIMESTEP
+
+    # Update position and velocity exactly
+    xdot = clamp(state.xdot + xddot*timestep, -params.scale_params.XYDOT_LIM, params.scale_params.XYDOT_LIM)
+    ydot = clamp(state.ydot + yddot*timestep, -params.scale_params.XYDOT_LIM, params.scale_params.XYDOT_LIM)
+
+    # Get true effective accelerations
+    true_xddot = (xdot - state.xdot)/timestep
+    true_yddot = (ydot - state.ydot)/timestep
+
+    x = state.x + state.xdot*timestep + 0.5*true_xddot*(timestep^2)
+    x = clamp(x, -params.scale_params.XY_LIM, params.scale_params.XY_LIM)
+
+    y = state.y + state.ydot*timestep + 0.5*true_yddot*(timestep^2)
+    y = clamp(y, -params.scale_params.XY_LIM, params.scale_params.XY_LIM)
+
+    return MultiRotorUAVState(x, y, xdot, ydot)
+end
+
 
 """
     next_state(model::MultiRotorUAVDynamicsModel, state::MultiRotorUAVState, action::MultiRotorUAVAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
@@ -148,6 +173,20 @@ function next_state(model::MultiRotorUAVDynamicsModel, state::MultiRotorUAVState
 
     return apply_controls(model, state, xddot, yddot)
 end
+
+function next_state(params::Parameters, state::MultiRotorUAVState, action::MultiRotorUAVAction, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+
+    # Sample acceleration noise vector
+    noise = Distributions.MvNormal([params.scale_params.ACC_NOISE_STD, params.scale_params.ACC_NOISE_STD])   
+    noiseval = rand(rng, noise)
+
+    # Augment actual acceleration with noise
+    xddot = action.xddot + noiseval[1]
+    yddot = action.yddot + noiseval[2]
+
+    return apply_controls(params, state, xddot, yddot)
+end
+
 
 """
     function dynamics_cost(model::MultiRotorUAVDynamicsModel, state::MultiRotorUAVState, next_state::MultiRotorUAVState)
@@ -188,4 +227,5 @@ function dynamics_cost(params::Parameters, state::MultiRotorUAVState, next_state
         cost += params.cost_params.FLIGHT_COEFFICIENT*dyn_dist
     end
 
-return cost
+    return cost
+end
