@@ -4,7 +4,6 @@ The overall HHPC framework solver object.
 Attributes:
     - `graph_tracker::GraphTracker{D,C,AD}`
     - `modal_policies::Dict{D,Policy}` A map from the mode to the modal policies (in and out-horizon)
-    - `modal_mdps::Dict{D,ModalMDP{D,C,AC}}` A map from the mode to the regional MDP
     - `replan_time_threshold::Int64` The Delta T parameter for periodic replanning (discrete time-steps)
     - `heuristic::Function` The heuristic method for the global layer
     - `max_steps::Int64` The maximum length of a problem episode (may not be applicable)
@@ -111,10 +110,11 @@ end
     PR = typeof(cmssp.params)
     M = metadatatype(solver.graph_tracker)
     B = bookkeepingtype(solver.graph_tracker)
+    MDPType = Union{ModalFinHorMDP{D,C,AC,PR},ModalInfHorMDP{D,C,AC,PR}}
 
     @req isterminal(::P, ::S)
-    @req generate_sr(::ModalMDP{D,C,AC,PR}, ::C, ::AC, ::typeof(solver.rng)) # OR transition + reward?
-    @req isterminal(::ModalMDP{D,C,AC,PR}, ::C)
+    @req generate_sr(::MDPType, ::C, ::AC, ::typeof(solver.rng)) # OR transition + reward?
+    @req isterminal(::MDPType, ::C)
 
     # Global layer requirements
     @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::Tuple{D,D}, ::CS)
@@ -124,10 +124,10 @@ end
     @req zero(::M)    
 
     # Local layer requirements
-    @req get_relative_state(::ModalMDP{D,C,AC,PR}, ::C, ::C)
-    @req expected_reward(::ModalMDP{D,C,AC,PR}, ::C, ::AC)
-    @req convert_s(::Type{V} where V <: AbstractVector{Float64},::C,::ModalMDP{D,C,AC,PR})
-    @req convert_s(::Type{C},::V where V <: AbstractVector{Float64},::ModalMDP{D,C,AC,PR})
+    @req get_relative_state(::MDPType, ::C, ::C)
+    @req expected_reward(::MDPType, ::C, ::AC)
+    @req convert_s(::Type{V} where V <: AbstractVector{Float64},::C, ::MDPType)
+    @req convert_s(::Type{C},::V where V <: AbstractVector{Float64}, ::MDPType)
 
     # HHPC requirements
     @req simulate_cmssp!(::P, ::S, ::A, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})

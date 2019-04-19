@@ -27,7 +27,7 @@ end
 const Toy2DStateType = CMSSPState{Int64,Toy2DContState}
 const Toy2DActionType = CMSSPAction{Int64,Toy2DContAction}
 const Toy2DCMSSPType = CMSSP{Int64,Toy2DContState,Int64,Toy2DContAction,Toy2DParameters}
-const Toy2DModalMDPType = ModalMDP{Int64,Toy2DContState,Toy2DContAction,Toy2DParameters}
+const Toy2DModalMDPType = ModalFinHorMDP{Int64,Toy2DContState,Toy2DContAction,Toy2DParameters}
 const Toy2DOpenLoopVertex = OpenLoopVertex{Int64,Toy2DContState,Int64}
 # Context is current collection of all valid transition points at each timestep
 const Toy2DModePair = Tuple{Int64, Int64}
