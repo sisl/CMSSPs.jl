@@ -40,6 +40,7 @@ export
 # Closed-loop exports
 export
     ModalHorizonPolicy,
+    ModalFinInfHorPolicy,
     ModalStateAugmented,
     ModalAction,
     ModalFinHorMDP,
@@ -50,6 +51,7 @@ export
     infinite_horizon_VI_localapprox,
     compute_min_value_per_horizon_localapprox!,
     horizon_weighted_value,
+    inf_hor_value,
     horizon_weighted_actionvalue,
     get_best_intramodal_action
 
@@ -78,9 +80,10 @@ export
     get_mdp,
     # Global
     update_vertices_with_context!,
-    generate_goal_sample_set!,
+    generate_goal_vertex_set!,
     generate_next_valid_modes,
-    generate_bridge_sample_set!,
+    generate_bridge_vertex_set!,
+    update_next_target!,
     # HHPC
     simulate_cmssp!,
     update_context_set!,
@@ -92,9 +95,10 @@ function expected_reward end
 function get_mdp end
 # Global reqs
 function update_vertices_with_context! end
-function generate_goal_sample_set! end
+function generate_goal_vertex_set! end
 function generate_next_valid_modes end
-function generate_bridge_sample_set! end
+function generate_bridge_vertex_set! end
+function update_next_target! end
 # HHPC reqs
 function simulate_cmssp! end
 function update_context_set! end

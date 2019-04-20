@@ -9,6 +9,17 @@ end
 
 get_mdp(mhp::ModalHorizonPolicy) = mhp.in_horizon_policy.mdp
 
+
+struct ModalFinInfHorPolicy{P <: Policy, Q <: Policy}
+    fin_hor_policy::Union{ModalHorizonPolicy{P},P}
+    inf_hor_policy::Q
+end
+
+# function ModalFinInfHorPolicy(fhp::Union{P,ModalHorizonPolicy{P}}, ihp::Q) where {P <: Policy, Q <: Policy}
+#     return ModalFinInfHorPolicy(fhp, ihp)
+# end
+
+
 """
 CMSSP State augmented with horizon value. Needed for LocalApproximationVI
 """
@@ -81,6 +92,30 @@ POMDPs.discount(mdp::ModalFinHorMDP) = 1.0 # SSP - Undiscounted
 POMDPs.actionindex(mdp::ModalFinHorMDP, a::ModalAction) = a.action_idx
 
 
+## Inf hor stuff
+mutable struct ModalInfHorMDP{D,C,AC,P} <: POMDPs.MDP{C,ModalAction{AC}}
+    mode::D
+    actions::Vector{ModalAction{AC}}
+    params::P
+    terminal_reward::Float64
+end
+
+function ModalInfHorMDP{D,C,AC,P}(mode::D, actions::Vector{AC}, params::P, terminal_reward::Float64=0.0) where {D,C,AC,P}
+    modal_actions = [ModalAction(a,i) for (i,a) in enumerate(actions)]
+    return ModalInfHorMDP{D,C,AC,P}(mode, modal_actions, params, terminal_reward)
+end
+
+function ModalInfHorMDP{D,C,AC,P}(mode::D, params::P, terminal_reward::Float64=0.0) where {D,C,AC,P}
+    return ModalInfHorMDP{D,C,AC,P}(mode, Vector{ModalAction{AC}}(undef,0), params, terminal_reward)
+end
+
+POMDPs.actions(mdp::ModalInfHorMDP) = mdp.actions
+POMDPs.n_actions(mdp::ModalInfHorMDP) = length(mdp.actions)
+POMDPs.discount(mdp::ModalInfHorMDP) = 1.0 # SSP - Undiscounted
+POMDPs.actionindex(mdp::ModalInfHorMDP, a::ModalAction) = a.action_idx
+
+get_mdp(pol::LocalApproximationValueIterationPolicy) = pol.mdp
+
 """
 Convert augmented state to a vector by calling the underlying convert_s function
 for non-augmented state. IMPORTANT: The underlying dynamics should be for RELATIVE STATE
@@ -136,32 +171,6 @@ end
 function POMDPs.isterminal(mdp::ModalFinHorMDP, s::ModalStateAugmented)
     return s.horizon == 0
 end
-
-## Inf hor stuff
-mutable struct ModalInfHorMDP{D,C,AC,P} <: POMDPs.MDP{C,ModalAction{AC}}
-    mode::D
-    actions::Vector{ModalAction{AC}}
-    params::P
-end
-
-function ModalInfHorMDP{D,C,AC,P}(mode::D, params::P, actions::Vector{AC}) where {D,C,AC,P}
-    modal_actions = [ModalAction(a,i) for (i,a) in enumerate(actions)]
-    return ModalInfHorMDP{D,C,AC,P}(mode, modal_actions, params)
-end
-
-function ModalInfHorMDP{D,C,AC,P}(mode::D, params::P, actions::Vector{ModalAction{AC}}) where {D,C,AC,P}
-    return ModalInfHorMDP{D,C,AC,P}(mode, modal_actions, params)
-end
-
-function ModalInfHorMDP{D,C,AC,P}(mode::D, params::P) where {D,C,AC,P}
-    return ModalInfHorMDP{D,C,AC,P}(mode, params, Vector{ModalAction{AC}}(undef,0))
-end
-
-POMDPs.actions(mdp::ModalInfHorMDP) = mdp.actions
-POMDPs.n_actions(mdp::ModalInfHorMDP) = length(mdp.actions)
-POMDPs.discount(mdp::ModalInfHorMDP) = 1.0 # SSP - Undiscounted
-POMDPs.actionindex(mdp::ModalInfHorMDP, a::ModalAction) = a.action_idx
-
 
 
 
@@ -321,8 +330,9 @@ function horizon_weighted_value(modal_policy::ModalHorizonPolicy, curr_timestep:
 
         if h > mdp.horizon_limit
             temp_state = ModalStateAugmented(temp_relative_state, mdp.horizon_limit+1)
-            weighted_value += p*POMDPs.value(modal_policy.out_horizon_policy,temp_state)
+            # weighted_value += p*POMDPs.value(modal_policy.out_horizon_policy,temp_state)
             
+            weighted_value += p*(-Inf)
             # IMP - For any prob of out-of-horizon, never abort
             weighted_minvalue += p*(-Inf)
         else
@@ -419,22 +429,21 @@ function get_best_intramodal_action(modal_policy::ModalHorizonPolicy, curr_times
 end
 
 
-function horizon_weighted_value(policy::P, curr_timestep::Int64,
-                                tp_dist::TPDistribution, curr_state::C, target_state::C) where {P <: Policy, C}
+function inf_hor_value(policy::P, curr_state::C, target_state::C) where {P <: Policy, C}
     
     # This is for an inf horizon policy
     mdp = get_mdp(policy)
 
     temp_relative_state = get_relative_state(mdp, curr_state, target_state)
-    value = POMDPs.value(policy, temp_relative_state)
+    value = POMDPs.value(policy, temp_relative_state) - mdp.terminal_reward
 
-    return value, -Inf
+    return value
 end
 
 
 
-function get_best_intramodal_action(policy::P, curr_timestep::Int64,
-                               tp_dist::TPDistribution, curr_state::C, target_state::C) where {P <: Policy, C}
+function get_best_intramodal_action(policy::LocalApproximationValueIterationPolicy, curr_timestep::Int64,
+                               tp_dist::TPDistribution, curr_state::C, target_state::C) where C
 
     mdp = get_mdp(policy)
 

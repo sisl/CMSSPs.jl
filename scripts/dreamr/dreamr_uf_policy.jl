@@ -18,11 +18,12 @@ using CMSSPs
 # policy_name = ARGS[4]
 # poly_or_exp = ARGS[5]
 
-scale_file = "../../paramsets/dreamr/scale-1.toml"
-simtime_file = "../../paramsets/dreamr/simtime-1.toml"
-cost_file = "../../paramsets/dreamr/cost-1.toml"
-policy_name = "dreamr-uf-smalltest"
+scale_file = "./paramsets/scale-1.toml"
+simtime_file = "./paramsets/simtime-1.toml"
+cost_file = "./paramsets/cost-1.toml"
+policy_name = "dreamr-uf-params111"
 poly_or_exp = "poly"
+num_iters = 50
 
 
 rng = MersenneTwister(10)
@@ -48,7 +49,7 @@ state_grid = RectangleGrid(xy_spacing, xy_spacing, xydot_spacing, xydot_spacing)
 
 lfa = LocalGIFunctionApproximator(state_grid)
 
-uf_policy = infinite_horizon_VI_localapprox(uf_mdp, lfa, 20, true, params.scale_params.MC_GENERATIVE_NUMSAMPLES, rng)
+uf_policy = infinite_horizon_VI_localapprox(uf_mdp, lfa, num_iters, true, params.scale_params.MC_GENERATIVE_NUMSAMPLES, rng)
 
 policy_fn = string(policy_name,".jld2")
 save_localapproxvi_policy_to_jld2(policy_fn, uf_policy, uf_mdp)

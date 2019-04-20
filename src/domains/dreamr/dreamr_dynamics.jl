@@ -93,6 +93,18 @@ function generate_start_state(model::MultiRotorUAVDynamicsModel, rng::RNG=Random
     return MultiRotorUAVState(x, y, xdot, ydot)
 end
 
+
+function generate_start_state(::Type{MultiRotorUAVState}, params::Parameters, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+    
+    x = rand(rng, Uniform(-params.scale_params.XY_LIM, params.scale_params.XY_LIM))
+    y = rand(rng, Uniform(-params.scale_params.XY_LIM, params.scale_params.XY_LIM))
+    
+    xdot = 0.
+    ydot = 0.
+
+    return MultiRotorUAVState(x, y, xdot, ydot)
+end
+
 """
     get_state_at_rest(model::MultiRotorUAVDynamicsModel, p::Point)
 

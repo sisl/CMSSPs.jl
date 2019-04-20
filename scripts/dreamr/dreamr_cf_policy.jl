@@ -18,10 +18,10 @@ using CMSSPs
 # policy_name = ARGS[4]
 # poly_or_exp = ARGS[5]
 
-scale_file = "../../paramsets/dreamr/scale-1.toml"
-simtime_file = "../../paramsets/dreamr/simtime-1.toml"
-cost_file = "../../paramsets/dreamr/cost-1.toml"
-policy_name = "dreamr-cf-smalltest"
+scale_file = "./paramsets/scale-1.toml"
+simtime_file = "./paramsets/simtime-1.toml"
+cost_file = "./paramsets/cost-1.toml"
+policy_name = "dreamr-cf-params1-betapt75"
 poly_or_exp = "poly"
 
 rng = MersenneTwister(10)

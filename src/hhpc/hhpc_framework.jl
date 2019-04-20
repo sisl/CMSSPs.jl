@@ -12,7 +12,7 @@ Attributes:
 """
 mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
     graph_tracker::GraphTracker{D,C,AD,M,B,RNG}
-    modal_policies::Dict{D,Policy}
+    modal_policies::Dict{D,ModalFinInfHorPolicy}
     replan_time_threshold::Int64
     goal_modes::Vector{D}
     curr_state::CMSSPState{D,C}
@@ -22,7 +22,7 @@ mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
     max_steps::Int64
 end
 
-function HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict{D,Policy},
+function HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict,
                                             deltaT::Int64, goal_modes::Vector{D},
                                             start_state::CMSSPState{D,C}, start_context_set::CS, 
                                             bookkeeping::B, rng::RNG=Random.GLOBAL_RNG,
@@ -56,34 +56,39 @@ function edge_weight_fn(solver::HHPCSolver, cmssp::CMSSP,
                         u::OpenLoopVertex, v::OpenLoopVertex)
 
     # u's state to v's pre-state should be in a single region
+    # @show u,v
     @assert u.state.mode == v.pre_bridge_state.mode
-    #     println("u.state.mode != v.pre_bridge_state.mode")
-    #     @show u,v
-    #     readline()
-    # end
 
     # We care about relative tp_dist between u and v
     # If inf, have modal policy overload it!
     mode = u.state.mode
-    policy = solver.modal_policies[mode]
-    mdp = get_mdp(policy)
-    temp_curr_time = convert(Int64, round(mean(u.tp)))
-    weighted_value, weighted_minvalue = horizon_weighted_value(policy,
-                                            temp_curr_time,
-                                            v.tp,
-                                            u.state.continuous,
-                                            v.pre_bridge_state.continuous)
-    # @show u,v
-    # @show weighted_value, weighted_minvalue
-    # readline()
 
-    # TODO : Verify that this works
-    # Filter out edges that nominally would trigger an interrupt
-    if weighted_value <= mdp.beta_threshold*weighted_minvalue
-        return Inf
+    # Branch on finite horizon and infinite horizon
+    if is_inf_hor(v.tp)
+
+        policy = solver.modal_policies[mode].inf_hor_policy
+        pol_value = inf_hor_value(policy, u.state.continuous, v.pre_bridge_state.continuous)
+
+    else
+        policy = solver.modal_policies[mode].fin_hor_policy
+        mdp = get_mdp(policy)
+        temp_curr_time = convert(Int64, round(mean(u.tp)))
+
+        pol_value, weighted_minvalue = horizon_weighted_value(policy,
+                                                temp_curr_time,
+                                                v.tp,
+                                                u.state.continuous,
+                                                v.pre_bridge_state.continuous)
+
+        # Filter out edges that nominally would trigger an interrupt
+        if pol_value <= mdp.beta_threshold*weighted_minvalue
+            return Inf
+        end
     end
 
-    edge_weight = -1.0*weighted_value
+    edge_weight = -1.0*pol_value
+
+    # @show edge_weight
 
     # Also add the cost due to the assumed mode switch
     if v.pre_bridge_state.mode != v.state.mode
@@ -117,10 +122,11 @@ end
     @req isterminal(::MDPType, ::C)
 
     # Global layer requirements
-    @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::Tuple{D,D}, ::CS)
-    @req generate_goal_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::CS)
+    @req generate_goal_vertex_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D, ::CS)
-    @req generate_bridge_sample_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::Tuple{D,AD,D}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req generate_bridge_vertex_set!(::P, ::OpenLoopVertex{D,C,AD,M}, ::Tuple{D,D}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req update_next_target!(::P, ::typeof(solver), ::CS)
     @req zero(::M)    
 
     # Local layer requirements
@@ -142,7 +148,7 @@ end
 """
 Executes the top-level behavior of HHPC. Utilizes both global and local layer logic, and interleaving.
 """
-function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,AD,AC,P}
+function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG}
 
     @warn_requirements solve(solver,cmssp)
 
@@ -158,37 +164,48 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
     total_cost = 0.0
     successful = false
 
+    start_metadata = zero(M)
 
     while t <= solver.max_steps
 
-        @show solver.curr_state
-        @show t
+        @show solver.curr_state, t
+        # @show t
 
         if plan == true
             println("Open loop plan!")
             @time open_loop_plan!(cmssp, solver.curr_state, t, edge_weight, solver.heuristic,
-                                  solver.goal_modes, solver.graph_tracker, solver.curr_context_set)
+                                  solver.goal_modes, solver.graph_tracker, start_metadata, solver.curr_context_set)
             readline()
             last_plan_time = t
             plan = false
+            next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
+        else
+            update_next_target!(cmssp, solver, solver.curr_context_set)
+            next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
         end
 
         # now do work for macro-actions 
-        next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]] # Second vertex in full plan
+         # Second vertex in full plan
+        start_metadata = next_target.metadata
         @show next_target
 
         # Check if 'terminal' state as per modal MDP
         @assert solver.curr_state.mode == next_target.pre_bridge_state.mode
 
         relative_time = mean(next_target.tp) - t
+        @show relative_time
 
-        if relative_time <= 0.5
+        if relative_time < 3
 
             curr_action = get_bridging_action(next_target)
             
         else
-
-            curr_action = get_best_intramodal_action(solver.modal_policies[solver.curr_state.mode], 
+            if is_inf_hor(next_target.tp)
+                policy = solver.modal_policies[solver.curr_state.mode].inf_hor_policy
+            else
+                policy = solver.modal_policies[solver.curr_state.mode].fin_hor_policy
+            end
+            curr_action = get_best_intramodal_action(policy, 
                                                      t,
                                                      next_target.tp, 
                                                      solver.curr_state.continuous, 
@@ -209,7 +226,7 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,
         t = t+1
         total_cost += -1.0*reward
 
-        @show new_state
+        # @show new_state
 
         # RCH hack - reset to 0 at every mode change
         if new_state.mode != solver.curr_state.mode

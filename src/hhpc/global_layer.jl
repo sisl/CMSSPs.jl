@@ -31,8 +31,7 @@ bookkeepingtype(::GraphTracker{D,C,AD,M,B,RNG}) where {D,C,AD,M,B,RNG <: Abstrac
 # end
 
 function GraphTracker{D,C,AD,M,B,RNG}(N::Int64, bookkeeping::B, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,M,B,RNG <: AbstractRNG}
-    return GraphTracker{D,C,AD,M,B,RNG}(SimpleVListGraph{OpenLoopVertex{D, C, AD, M}}(),
-                        Dict{Tuple{D,D},MVector{2,Int64}}(),
+    return GraphTracker{D,C,AD,M,B,RNG}(SimpleVListGraph{OpenLoopVertex{D,C,AD,M}}(),
                         0, 0, Vector{Int64}(undef, 0), N, bookkeeping, rng)
 end
 
@@ -55,15 +54,16 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
                          edge_weight::Function,
                          heuristic::Function,
                          goal_modes::Vector{D},
-                         graph_tracker::GraphTracker,
-                         context_set::CS) where {D,CS} 
+                         graph_tracker::GraphTracker{D,C,AD,M,B,RNG},
+                         start_metadata::M,
+                         context_set::CS) where {D,C,AD,M,CS,B,RNG <: AbstractRNG} 
 
     # First update the context
     update_vertices_with_context!(cmssp, graph_tracker, context_set)
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
-    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex(s_t, cmssp.mode_actions[1], TPDistribution([curr_time], [1.0])))
+    add_vertex!(graph_tracker.curr_graph, OpenLoopVertex{D,C,AD,M}(s_t, cmssp.mode_actions[1], TPDistribution([curr_time], [1.0]), start_metadata))
     graph_tracker.curr_start_idx = num_vertices(graph_tracker.curr_graph)
     graph_tracker.curr_goal_idx = 0
 
@@ -170,19 +170,19 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     if popped_mode in vis.goal_modes
             
         # Generate goal sample set
-        (samples_to_add, nbrs_to_add) = generate_goal_sample_set!(vis.cmssp, v, vis.context_set, vis.graph_tracker, vis.graph_tracker.rng)
+        (vertices_to_add, nbrs_to_add) = generate_goal_vertex_set!(vis.cmssp, v, vis.context_set, vis.graph_tracker, vis.graph_tracker.rng)
         
         for nbr_idx in nbrs_to_add
             push!(nbrs, nbr_idx)
         end
 
-        num_new_samples = length(samples_to_add)
+        num_new_vertices = length(vertices_to_add)
 
-        if num_new_samples > 0
+        if num_new_vertices > 0
             
             # Add vertices to graph and to nbrs
-            for gs in samples_to_add
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(gs, vis.cmssp.mode_actions[1]))
+            for vtx in vertices_to_add
+                add_vertex!(vis.graph_tracker.curr_graph, vtx)
                 push!(nbrs, num_vertices(vis.graph_tracker.curr_graph))
             end
         end
@@ -197,27 +197,27 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     for (action, nvm) in next_valid_modes
             
         # Generate bridge samples
-        (samples_to_add, nbrs_to_add) = generate_bridge_sample_set!(vis.cmssp, v, 
-                                                                    (popped_mode, action, nvm),
+        (vertices_to_add, nbrs_to_add) = generate_bridge_vertex_set!(vis.cmssp, v, 
+                                                                    (popped_mode, nvm),
                                                                     vis.context_set, vis.graph_tracker,
                                                                     vis.graph_tracker.rng)
         for nbr_idx in nbrs_to_add
             push!(nbrs, nbr_idx)
         end
 
-        num_new_samples = length(samples_to_add)
+        num_new_vertices = length(vertices_to_add)
 
-        if num_new_samples > 0
+        if num_new_vertices > 0
 
             # Add vertices to graph and to nbrs
-            for bs in samples_to_add
-                add_vertex!(vis.graph_tracker.curr_graph, OpenLoopVertex(popped_mode, nvm, bs, action))
+            for vtx in vertices_to_add
+                add_vertex!(vis.graph_tracker.curr_graph, vtx)
                 push!(nbrs, num_vertices(vis.graph_tracker.curr_graph))
             end
         end
     end
 
-    #@show nbrs
+    # @show nbrs
     # readline()
     return true
 end

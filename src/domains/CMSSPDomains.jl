@@ -16,6 +16,7 @@ using POMDPModelTools
 using POMDPModels
 using POMDPPolicies
 using POMDPSimulators
+using Graphs
 
 # For reading params
 using TOML
@@ -49,6 +50,7 @@ using CMSSPs.HHPC
 
 # DREAMR exports
 export
+    Point,
     Parameters,
     parse_params,
     UAVDynamicsModel,
@@ -57,15 +59,30 @@ export
     MultiRotorUAVState,
     MultiRotorUAVAction,
     MultiRotorUAVDynamicsModel,
+    generate_start_state,
+    get_state_at_rest,
+    HopOnOffSingleCarSimulator,
+    reset_sim,
+    step_sim,
     DREAMR_MODETYPE,
+    DREAMRModeAction,
+    DREAMRContextSet,
+    FLIGHT, RIDE,
     HOP_ACTION,
+    HOPON, HOPOFF, STAY,
+    DREAMRStateType,
+    DREAMRBookkeeping,
+    DREAMRVertexMetadata,
+    DREAMRSolverType,
     get_dreamr_actions,
     get_dreamr_mdp,
+    set_dreamr_goal!,
     create_dreamr_cmssp,
     get_dreamr_episode_context,
     get_cf_mdp,
     get_uf_mdp,
     get_ride_mdp,
+    get_arrival_time_distribution,
     DREAMRDeterministicPolicy
 
 
@@ -73,6 +90,7 @@ export
 include("dreamr/dreamr_types.jl")
 include("dreamr/dreamr_params.jl")
 include("dreamr/dreamr_dynamics.jl")
+include("dreamr/dreamr_cf_simulator.jl")
 include("dreamr/dreamr_cmssp.jl")
 
 end # End of submodule
