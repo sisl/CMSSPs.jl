@@ -149,7 +149,7 @@ end
 """
 Executes the top-level behavior of HHPC. Utilizes both global and local layer logic, and interleaving.
 """
-function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,P,M,B,RNG}, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,AD,AC,P,M,B,RNG <: AbstractRNG}
+function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D,C,AD,AC,P,CS}
 
     @warn_requirements solve(solver,cmssp)
 
@@ -181,8 +181,15 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,P,M,B,RNG}, cmssp::CMSSP{D,C,
             plan = false
             next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
         else
-            update_next_target!(cmssp, solver, cmssp.curr_context_set)
-            next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
+            if is_inf_hor(next_target.tp_dist)
+                valid_update = update_next_target!(cmssp, solver)
+
+                if valid_update == false
+                    plan = false
+                    continue
+                end
+                next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
+            end
         end
 
         # now do work for macro-actions 
@@ -196,7 +203,7 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,P,M,B,RNG}, cmssp::CMSSP{D,C,
         relative_time = mean(next_target.tp) - t
         @show relative_time
 
-        if relative_time < 2
+        if relative_time < 1
 
             curr_action = get_bridging_action(next_target)
             
@@ -223,7 +230,7 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,P,M,B,RNG}, cmssp::CMSSP{D,C,
         # So simulator should handle NOTHING
         # Will typically be bound to other environment variables
         # update_context_set!(cmssp, solver.rng)
-        (new_state, reward, failed_mode_switch) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, cmssp.curr_context_set, solver.rng)
+        (new_state, reward, failed_mode_switch) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, solver.rng)
         t = t+1
         total_cost += -1.0*reward
 

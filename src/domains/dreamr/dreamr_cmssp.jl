@@ -230,12 +230,16 @@ end
 
 
 
-function get_arrival_time_distribution(mean_time::Float64, params::Parameters, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+function get_arrival_time_distribution(curr_timestep::Int64, mean_time::Float64, params::Parameters, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
     
-    # Returns a TPDist
-    time_dist = Normal(mean_time, params.time_params.CAR_TIME_STD/2.0)
-    temp_tp_dict = Dict{Int64,Float64}()
+    # If very close to time, collapse around estimate
+    if mean_time / params.time_params.MDP_TIMESTEP - curr_timestep > 2.0
+        time_dist = Normal(mean_time, params.time_params.CAR_TIME_STD)
+    else
+        time_dist = Normal(mean_time, params.scale_params.EPSILON)
+    end
 
+    temp_tp_dict = Dict{Int64,Float64}()
 
     for j = 1:params.time_params.MC_TIME_NUMSAMPLES
         tval = rand(rng, time_dist) / params.time_params.MDP_TIMESTEP
@@ -480,18 +484,20 @@ function HHPC.update_next_target!(cmssp::DREAMRCMSSPType, solver::DREAMRSolverTy
     context_set = cmssp.curr_context_set
     next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
     # @show next_target
-    if is_inf_hor(next_target.tp) == false
-        car_id = next_target.metadata.car_id
-        vertex_id = next_target.metadata.vertex_id
+    car_id = next_target.metadata.car_id
+    vertex_id = next_target.metadata.vertex_id
 
-        car_route_info = context_set.epochs_dict[string(context_set.curr_epoch)]["car-info"][car_id]["route"]
+    car_route_info = context_set.epochs_dict[string(context_set.curr_epoch)]["car-info"][car_id]["route"]
 
-        timeval = car_route_info[vertex_id][2]
-
-        next_target.tp = get_arrival_time_distribution(timeval, cmssp.params, solver.graph_tracker.rng)
+    if haskey(car_route_info, vertex_id) == false
+        return false # Invalid update as car has disappeared
     end
+    
+    timeval = car_route_info[vertex_id][2]
+    next_target.tp = get_arrival_time_distribution(timeval, cmssp.params, solver.graph_tracker.rng)
     # @show next_target
     # readline()
+    return true
 end
 
 
