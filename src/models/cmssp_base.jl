@@ -39,7 +39,7 @@ Attributes:
     the modes and actions follow the ordering in modes::Vector{D} and mode_actions::Vector{AD} respectively
     - `control_actions::Vector{AC}` The set of control actions in the same relative order as the full action set
 """
-mutable struct CMSSP{D,C,AD,AC,P} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
+mutable struct CMSSP{D,C,AD,AC,P,CS} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,AC}}
     actions::Vector{CMSSPAction{AD,AC}}
     modes::Vector{D}
     mode_actions::Vector{AD}
@@ -47,13 +47,15 @@ mutable struct CMSSP{D,C,AD,AC,P} <: POMDPs.MDP{CMSSPState{D,C}, CMSSPAction{AD,
     control_actions::Vector{AC}
     goal_state::CMSSPState{D,C}
     params::P
+    curr_context_set::CS
 end
 
-function CMSSP{D,C,AD,AC,P}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D},
-                          switch_mdp::TabularMDP, goal_state::CMSSPState{D,C}, params::P) where {D,C,AD,AC,P}
-    return CMSSP{D,C,AD,AC,P}(actions, modes,  
+function CMSSP{D,C,AD,AC,P,CS}(actions::Vector{CMSSPAction{AD,AC}}, modes::Vector{D},
+                          switch_mdp::TabularMDP, goal_state::CMSSPState{D,C}, params::P,
+                          init_context_cs::CS) where {D,C,AD,AC,P,CS}
+    return CMSSP{D,C,AD,AC,P,CS}(actions, modes,  
                  get_modeswitch_actions(actions), switch_mdp, 
-                 get_control_actions(actions), goal_state, params)
+                 get_control_actions(actions), goal_state, params, init_context_cs)
 end
 
 # POMDPs overrides

@@ -60,7 +60,7 @@ export
 # ensure that mode-switch MDP available?
 export
     HHPCSolver,
-    set_start_state_context_set!,
+    set_start_state!,
     set_open_loop_samples!
 
 # Utils

@@ -41,9 +41,6 @@ ride_policy = DREAMRDeterministicPolicy(params)
 modal_policies = Dict(FLIGHT => ModalFinInfHorPolicy(hopon_policy, flight_policy),
                       RIDE => ModalFinInfHorPolicy(ride_policy,flight_policy))
 
-# Create CMSSP
-cmssp = create_dreamr_cmssp(MultiRotorUAVState, MultiRotorUAVAction, Point(0.0, 0.0), params)
-
 deltaT = convert(Int64, (params.time_params.MAX_REPLAN_TIMESTEP/params.time_params.MDP_TIMESTEP))
 
 
@@ -70,11 +67,14 @@ for iter = 1:num_eps
 
     @show start_state
 
+    # Create CMSSP
+    cmssp = create_dreamr_cmssp(MultiRotorUAVState, MultiRotorUAVAction, Point(0.0, 0.0), params)
+
     set_dreamr_goal!(cmssp, goal_pos)
 
     # Create solver
     dreamr_solver = DREAMRSolverType{MultiRotorUAVState,MultiRotorUAVAction,typeof(rng)}(0, modal_policies,
-                                    deltaT, [FLIGHT], start_state, context_set, DREAMRBookkeeping(), rng)
+                                    deltaT, [FLIGHT], start_state, DREAMRBookkeeping(), rng)
 
     (cost, timesteps, successful) = solve(dreamr_solver, cmssp)
     if successful

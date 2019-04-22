@@ -16,26 +16,24 @@ mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
     replan_time_threshold::Int64
     goal_modes::Vector{D}
     curr_state::CMSSPState{D,C}
-    curr_context_set::CS
     rng::RNG
     heuristic::Function
     max_steps::Int64
 end
 
-function HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict,
+function HHPCSolver{D,C,AD,AC,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict,
                                             deltaT::Int64, goal_modes::Vector{D},
-                                            start_state::CMSSPState{D,C}, start_context_set::CS, 
+                                            start_state::CMSSPState{D,C}, 
                                             bookkeeping::B, rng::RNG=Random.GLOBAL_RNG,
                                             heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG}
-    return HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}(GraphTracker{D,C,AD,M,B,RNG}(num_samples, bookkeeping, rng),
+    return HHPCSolver{D,C,AD,AC,P,M,B,RNG}(GraphTracker{D,C,AD,M,B,RNG}(num_samples, bookkeeping, rng),
                                               modal_policies, deltaT, goal_modes,
-                                              start_state, start_context_set, rng, heuristic, max_steps)
+                                              start_state, rng, heuristic, max_steps)
 end
 
 
-function set_start_state_context_set!(solver::HHPCSolver, start_state::CMSSPState{D,C}, start_context_set::CS) where {D,C,CS}
+function set_start_state!(solver::HHPCSolver, start_state::CMSSPState{D,C}) where {D,C}
     solver.curr_state = start_state
-    solver.curr_context_set = start_context_set
 end
 
 function set_open_loop_samples!(solver::HHPCSolver, num_samples::Int64)
@@ -111,7 +109,7 @@ end
     C = continuoustype(cmssp)
     AD = modeactiontype(cmssp)
     AC = controlactiontype(cmssp)
-    CS = typeof(solver.curr_context_set)
+    CS = typeof(cmssp.curr_context_set)
     PR = typeof(cmssp.params)
     M = metadatatype(solver.graph_tracker)
     B = bookkeepingtype(solver.graph_tracker)
@@ -122,11 +120,11 @@ end
     @req isterminal(::MDPType, ::C)
 
     # Global layer requirements
-    @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::CS)
-    @req generate_goal_vertex_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
-    @req generate_next_valid_modes(::P, ::D, ::CS)
-    @req generate_bridge_vertex_set!(::P, ::OpenLoopVertex{D,C,AD,M}, ::Tuple{D,D}, ::CS, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
-    @req update_next_target!(::P, ::typeof(solver), ::CS)
+    @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker))
+    @req generate_goal_vertex_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req generate_next_valid_modes(::P, ::D)
+    @req generate_bridge_vertex_set!(::P, ::OpenLoopVertex{D,C,AD,M}, ::Tuple{D,D}, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req update_next_target!(::P, ::typeof(solver))
     @req zero(::M)    
 
     # Local layer requirements
@@ -136,10 +134,13 @@ end
     @req convert_s(::Type{C},::V where V <: AbstractVector{Float64}, ::MDPType)
 
     # HHPC requirements
-    @req simulate_cmssp!(::P, ::S, ::A, ::Int64, ::CS, ::RNG where {RNG <: AbstractRNG})
-    @req update_context_set!(::P, ::CS, ::RNG where {RNG <: AbstractRNG})
+    @req simulate_cmssp!(::P, ::S, ::A, ::Int64, ::RNG where {RNG <: AbstractRNG})
+    # @req update_context_set!(::P, ::RNG where {RNG <: AbstractRNG})
     @req get_bridging_action(::OpenLoopVertex{D, C, AD, M})
     @req display_context_future(::CS, ::Int64)
+
+    # MCTS requirement
+    
 
 end
 
@@ -148,7 +149,7 @@ end
 """
 Executes the top-level behavior of HHPC. Utilizes both global and local layer logic, and interleaving.
 """
-function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG}
+function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,P,M,B,RNG}, cmssp::CMSSP{D,C,AD,AC,P}) where {D,C,AD,AC,P,M,B,RNG <: AbstractRNG}
 
     @warn_requirements solve(solver,cmssp)
 
@@ -174,13 +175,13 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}, cmssp::CMSSP{D
         if plan == true
             println("Open loop plan!")
             @time open_loop_plan!(cmssp, solver.curr_state, t, edge_weight, solver.heuristic,
-                                  solver.goal_modes, solver.graph_tracker, start_metadata, solver.curr_context_set)
+                                  solver.goal_modes, solver.graph_tracker, start_metadata)
             readline()
             last_plan_time = t
             plan = false
             next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
         else
-            update_next_target!(cmssp, solver, solver.curr_context_set)
+            update_next_target!(cmssp, solver, cmssp.curr_context_set)
             next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
         end
 
@@ -195,7 +196,7 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}, cmssp::CMSSP{D
         relative_time = mean(next_target.tp) - t
         @show relative_time
 
-        if relative_time < 3
+        if relative_time < 2
 
             curr_action = get_bridging_action(next_target)
             
@@ -221,8 +222,8 @@ function POMDPs.solve(solver::HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG}, cmssp::CMSSP{D
         # If curr_action = NOTHING, means interrupt
         # So simulator should handle NOTHING
         # Will typically be bound to other environment variables
-        update_context_set!(cmssp, solver.curr_context_set, solver.rng)
-        (new_state, reward, failed_mode_switch) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, solver.curr_context_set, solver.rng)
+        # update_context_set!(cmssp, solver.rng)
+        (new_state, reward, failed_mode_switch) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, cmssp.curr_context_set, solver.rng)
         t = t+1
         total_cost += -1.0*reward
 

@@ -55,11 +55,10 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
                          heuristic::Function,
                          goal_modes::Vector{D},
                          graph_tracker::GraphTracker{D,C,AD,M,B,RNG},
-                         start_metadata::M,
-                         context_set::CS) where {D,C,AD,M,CS,B,RNG <: AbstractRNG} 
+                         start_metadata::M) where {D,C,AD,M,B,RNG <: AbstractRNG} 
 
     # First update the context
-    update_vertices_with_context!(cmssp, graph_tracker, context_set)
+    update_vertices_with_context!(cmssp, graph_tracker)
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
@@ -73,7 +72,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
     # Obtain path and current cost with A*
     astar_path_soln = astar_light_shortest_path_implicit(graph_tracker.curr_graph, edge_weight,
                                                          graph_tracker.curr_start_idx,
-                                                         GoalVisitorImplicit(graph_tracker, cmssp, goal_modes, context_set))
+                                                         GoalVisitorImplicit(graph_tracker, cmssp, goal_modes))
 
     # If unreachable, report warning
     if graph_tracker.curr_goal_idx == 0
@@ -105,51 +104,15 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
     # end
 end
 
-"""
-Update the current open-loop graph tracker with the new context set.
-
-Arguments:
-    - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
-    - `graph_tracker::GraphTracker{D,C}` The graph_tracker instance to update in place
-"""
-# function update_graph_tracker!(cmssp::CMSSP{D, C, AD, AC}, graph_tracker::GraphTracker, context_set::CS) where {D, C, AD, AC, CS}
-    
-#     # Run through mode switch ranges and either retain or remove if context has changed too much
-#     keys_to_delete = Vector{Tuple{D,D}}(undef, 0)
-
-#     for (switch, idx_range) in graph_tracker.mode_switch_idx_range
-#         # If samples in final mode, skip
-#         if switch[1] == switch[2]
-#             continue
-#         end
-
-#         # Copy over subvector of vertices
-#         # range_subvector = graph_tracker.curr_graph.vertices[idx_range[1]:idx_range[2]]
-#         (valid_update, new_idx_range) = update_vertices_with_context!(cmssp, graph_tracker, switch, context_set)
-
-#         # Delete key if not updated
-#         if valid_update == false
-#             push!(keys_to_delete,switch)
-#         else
-#             graph_tracker.mode_switch_idx_range = new_idx_range
-#         end
-#     end
-
-#     # Iterate over keys_to_delete and delete those that are not updated
-#     for ktd in keys_to_delete
-#         delete!(graph_tracker.mode_switch_idx_range, ktd)
-#     end
-# end
 
 
 """
 The visitor object for the implicit A* search. Attributes obvious.
 """
-struct GoalVisitorImplicit{CS} <: AbstractDijkstraVisitor
+struct GoalVisitorImplicit <: AbstractDijkstraVisitor
     graph_tracker::GraphTracker
     cmssp::CMSSP
     goal_modes::Vector
-    context_set::CS
 end
 
 
@@ -170,7 +133,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     if popped_mode in vis.goal_modes
             
         # Generate goal sample set
-        (vertices_to_add, nbrs_to_add) = generate_goal_vertex_set!(vis.cmssp, v, vis.context_set, vis.graph_tracker, vis.graph_tracker.rng)
+        (vertices_to_add, nbrs_to_add) = generate_goal_vertex_set!(vis.cmssp, v, vis.graph_tracker, vis.graph_tracker.rng)
         
         for nbr_idx in nbrs_to_add
             push!(nbrs, nbr_idx)
@@ -189,7 +152,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     end
 
     # Now add for next modes
-    next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode, vis.context_set)
+    next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode)
 
     # @show next_valid_modes
     # @show vis.graph_tracker.mode_switch_idx_range
@@ -199,7 +162,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
         # Generate bridge samples
         (vertices_to_add, nbrs_to_add) = generate_bridge_vertex_set!(vis.cmssp, v, 
                                                                     (popped_mode, nvm),
-                                                                    vis.context_set, vis.graph_tracker,
+                                                                    vis.graph_tracker,
                                                                     vis.graph_tracker.rng)
         for nbr_idx in nbrs_to_add
             push!(nbrs, nbr_idx)
