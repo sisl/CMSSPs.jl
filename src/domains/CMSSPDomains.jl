@@ -17,6 +17,7 @@ using POMDPModels
 using POMDPPolicies
 using POMDPSimulators
 using Graphs
+using MCTS
 
 # For reading params
 using TOML
@@ -83,7 +84,8 @@ export
     get_uf_mdp,
     get_ride_mdp,
     get_arrival_time_distribution,
-    DREAMRDeterministicPolicy
+    DREAMRDeterministicPolicy,
+    DREAMRMCTSType
 
 
 # include("toy_2d.jl")
