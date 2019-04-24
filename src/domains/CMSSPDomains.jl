@@ -17,7 +17,6 @@ using POMDPModels
 using POMDPPolicies
 using POMDPSimulators
 using Graphs
-using MCTS
 
 # For reading params
 using TOML

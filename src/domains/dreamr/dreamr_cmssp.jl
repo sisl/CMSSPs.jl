@@ -564,7 +564,7 @@ function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateT
             else
 
                 @warn "Failed to hop on to car!"
-                println("Position of car ",hopon_car_id,": ",car_pos)
+                @show car_pos
                 failed_mode_switch = true
                 next_dreamr_state = state
                 context_set.curr_car_id = ""
@@ -688,15 +688,6 @@ POMDPs.actions(dmcts::DREAMRMCTSType, state::DREAMRStateType) = actions(dmcts.cm
 POMDPs.n_actions(dmcts::DREAMRMCTSType) = length(dmcts.cmssp.actions)
 POMDPs.discount(dmcts::DREAMRMCTSType) = 1.0 # SSP - Undiscounted
 POMDPs.actionindex(dmcts::DREAMRMCTSType, a::DREAMRActionType) = a.action_idx
-
-function MCTS.reset_mdp_root!(dmcts::DREAMRMCTSType)
-    dmcts.depth_root = 0
-    dmcts.on_car_id = cmssp.curr_context_set.curr_car_id
-end
-
-function MCTS.increment_mdp_depth!(dmcts::DREAMRMCTSType)
-    dmcts.depth_root += 1
-end
 
 function POMDPs.isterminal(dmcts::DREAMRMCTSType, state::DREAMRStateType)
     return isterminal(dmcts.cmssp, state)
