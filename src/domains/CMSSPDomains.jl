@@ -85,7 +85,9 @@ export
     get_ride_mdp,
     get_arrival_time_distribution,
     DREAMRDeterministicPolicy,
-    DREAMRMCTSType
+    DREAMRMCTSType,
+    DREAMRMCTSState,
+    estimate_value_dreamr
 
 
 # include("toy_2d.jl")

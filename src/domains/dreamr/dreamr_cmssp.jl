@@ -8,7 +8,7 @@ const DREAMR_GOAL_MODE = FLIGHT
 const DREAMR_MODE_ACTIONS = [HOPON, HOPOFF, STAY]
 
 
-struct DREAMRModeAction
+mutable struct DREAMRModeAction
     mode_action::HOP_ACTION
     car_id::String
 end
@@ -103,6 +103,10 @@ end
 
 
 function POMDPs.actions(cmssp::DREAMRCMSSPType, state::DREAMRStateType)
+
+    if cmssp.curr_context_set.curr_epoch >= length(collect(keys(cmssp.curr_context_set.epochs_dict)))
+        return cmssp.actions[4:end]
+    end
 
     if state.mode == FLIGHT
         return [cmssp.actions[1]; cmssp.actions[4:end]]
@@ -299,12 +303,6 @@ function HHPC.generate_bridge_vertex_set!(cmssp::DREAMRCMSSPType, vertex::DREAMR
             for next_idx in hopon_vert_range[1]:hopon_vert_range[2]
 
                 # Check if max drone speed not enough
-                if next_idx == 0
-                    @info "NEXT_IDX is 0"
-                    @show car_id
-                    @show ranges
-                    readline()
-                end
                 next_vert = graph_tracker.curr_graph.vertices[next_idx]
                 state_dist = point_dist(get_position(vertex.state.continuous), get_position(next_vert.state.continuous))
 
@@ -520,8 +518,13 @@ function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateT
     context_set = cmssp.curr_context_set
     params = cmssp.params
 
-    curr_epoch_dict = context_set.epochs_dict[string(context_set.curr_epoch)]
-    epoch_cars = curr_epoch_dict["car-info"]
+    if haskey(context_set.epochs_dict, string(context_set.curr_epoch))
+        curr_epoch_dict = context_set.epochs_dict[string(context_set.curr_epoch)]
+        epoch_cars = curr_epoch_dict["car-info"]
+    else
+        # No more car actions after 360
+        @assert typeof(a.action) <: UAVAction
+    end
 
     curr_mode = state.mode
     curr_cont_state = state.continuous
@@ -676,40 +679,54 @@ end
 
 
 # Define specific CMSSP type for MCTS (with root depth)
-
-mutable struct DREAMRMCTSType{US <: UAVState, UA <: UAVAction} <: POMDPs.MDP{DREAMRStateType{US}, DREAMRActionType{UA}} 
-    cmssp::DREAMRCMSSPType{US,UA}
+struct DREAMRMCTSState{US <: UAVState}
+    cmssp_state::DREAMRStateType{US}
     on_car_id::String
     depth_root::Int64
 end
 
+function DREAMRMCTSState(cmssp_state::DREAMRStateType)
+    return DREAMRMCTSState(cmssp_state, "", 0)
+end
+
+
+mutable struct DREAMRMCTSType{US <: UAVState, UA <: UAVAction} <: POMDPs.MDP{DREAMRMCTSState{US}, DREAMRActionType{UA}} 
+    cmssp::DREAMRCMSSPType{US,UA}
+end
+
 POMDPs.actions(dmcts::DREAMRMCTSType) = dmcts.cmssp.actions
-POMDPs.actions(dmcts::DREAMRMCTSType, state::DREAMRStateType) = actions(dmcts.cmssp, state)
+POMDPs.actions(dmcts::DREAMRMCTSType, state::DREAMRMCTSState) = actions(dmcts.cmssp, state.cmssp_state)
 POMDPs.n_actions(dmcts::DREAMRMCTSType) = length(dmcts.cmssp.actions)
 POMDPs.discount(dmcts::DREAMRMCTSType) = 1.0 # SSP - Undiscounted
 POMDPs.actionindex(dmcts::DREAMRMCTSType, a::DREAMRActionType) = a.action_idx
 
-function MCTS.reset_mdp_root!(dmcts::DREAMRMCTSType)
-    dmcts.depth_root = 0
-    dmcts.on_car_id = cmssp.curr_context_set.curr_car_id
-end
+# function MCTS.reset_mdp_root!(dmcts::DREAMRMCTSType)
+#     dmcts.depth_root = 0
+#     dmcts.on_car_id = dmcts.cmssp.curr_context_set.curr_car_id
+# end
 
-function MCTS.increment_mdp_depth!(dmcts::DREAMRMCTSType)
-    dmcts.depth_root += 1
-end
+# function MCTS.increment_mdp_depth!(dmcts::DREAMRMCTSType)
+#     dmcts.depth_root += 1
+# end
 
-function POMDPs.isterminal(dmcts::DREAMRMCTSType, state::DREAMRStateType)
-    return isterminal(dmcts.cmssp, state)
+function POMDPs.isterminal(dmcts::DREAMRMCTSType, state::DREAMRMCTSState)
+    return isterminal(dmcts.cmssp, state.cmssp_state)
 end
 
 # Requirement for MCTS-DPW
 # NOTE - This uses the 
-function POMDPs.generate_sr(dmcts::DREAMRMCTSType{US,UA}, state::DREAMRStateType{US},
+function POMDPs.generate_sr(dmcts::DREAMRMCTSType{US,UA}, state::DREAMRMCTSState{US},
                             a::DREAMRActionType{UA}, rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
+
+    # if state.depth_root > 0
+    #     @debug "depth root - ",state.depth_root
+    #     readline()
+    # end
 
     cmssp = dmcts.cmssp
     params = cmssp.params
-    curr_cont_state = state.continuous
+    cmssp_state = state.cmssp_state
+    curr_cont_state = cmssp_state.continuous
 
     reward = -params.cost_params.TIME_COEFFICIENT*params.time_params.MDP_TIMESTEP
     
@@ -718,18 +735,23 @@ function POMDPs.generate_sr(dmcts::DREAMRMCTSType{US,UA}, state::DREAMRStateType
         new_uav_state = next_state(params, curr_cont_state, a.action, rng)
         reward += -dynamics_cost(params, curr_cont_state, new_uav_state)
         next_dreamr_state = DREAMRStateType{US}(FLIGHT, new_uav_state)
-
+        next_dmcts_state = DREAMRMCTSState(next_dreamr_state, "", state.depth_root+1)
     else
         # Is a mode-switch action, propagate context and see what to do
         context_set = cmssp.curr_context_set
         curr_time = context_set.curr_epoch*params.time_params.MDP_TIMESTEP
-        future_time = (dmcts.depth_root+1)*params.time_params.MDP_TIMESTEP
+        future_time = curr_time + (state.depth_root+1)*params.time_params.MDP_TIMESTEP
 
         curr_epoch_dict = context_set.epochs_dict[string(context_set.curr_epoch)]
         epoch_cars = curr_epoch_dict["car-info"]
         
         # Loop through all current cars and evaluate
         if a.action.mode_action == HOPON
+
+            # If nothing else, copy current state
+            next_dmcts_state = DREAMRMCTSState(cmssp_state, "", state.depth_root+1)
+            hop_success = false
+
             reward += -cmssp.modeswitch_mdp.R[1, 1]
 
             for (car_id, car_info) in epoch_cars
@@ -737,36 +759,89 @@ function POMDPs.generate_sr(dmcts::DREAMRMCTSType{US,UA}, state::DREAMRStateType
                 if car_info["route"] != nothing
 
                     car_pos = get_future_projected_car_position(car_info, curr_time, future_time)
-                    uav_pos = get_position(curr_cont_state)
-                    uav_speed = get_speed(curr_cont_state)
 
-                    if car_uav_dist < 2.0*params.scale_params.HOP_DISTANCE_THRESHOLD*params.time_params.MDP_TIMESTEP &&
-                            uav_speed < params.scale_params.XYDOT_HOP_THRESH
+                    if car_pos != nothing # Not if car not valid at that future timestep
 
-                        new_uav_state = get_state_at_rest(US, car_pos)
-                        next_dreamr_state = DREAMRStateType{US}(RIDE, new_uav_state)
-                        dmcts.on_car_id = car_id
-                        break
+                        uav_pos = get_position(curr_cont_state)
+                        uav_speed = get_speed(curr_cont_state)
+
+                        car_uav_dist = point_dist(car_pos, uav_pos)
+
+                        if car_uav_dist < 2.0*params.scale_params.HOP_DISTANCE_THRESHOLD*params.time_params.MDP_TIMESTEP &&
+                                uav_speed < params.scale_params.XYDOT_HOP_THRESH
+
+                            new_uav_state = get_state_at_rest(US, car_pos)
+                            next_dreamr_state = DREAMRStateType{US}(RIDE, new_uav_state)
+                            
+                            next_dmcts_state = DREAMRMCTSState(next_dreamr_state, car_id, state.depth_root+1)
+
+                            hop_success = true
+
+                            a.action.car_id = car_id
+                            # @show curr_time, future_time
+                            # @show state
+                            # @show car_info["pos"]
+                            # @show car_info["route"]
+                            # readline()
+                            break
+                        end
                     end
                 end
             end
+
+            if hop_success == false
+                reward += -params.cost_params.INVALID_HOP_PENALTY
+            end
         elseif a.action.mode_action == HOPOFF
 
+            @debug "HOPOFF in SIM!"
             reward += -cmssp.modeswitch_mdp.R[2, 2]
 
-            hopoff_car_id = dmcts.on_car_id
+            hopoff_car_id = state.on_car_id
             car_pos = Point(epoch_cars[hopoff_car_id]["pos"][1], epoch_cars[hopoff_car_id]["pos"][2])
             new_uav_state = get_state_at_rest(US, car_pos)
-
             next_dreamr_state = DREAMRStateType{US}(FLIGHT, new_uav_state)
-            dmcts.on_car_id = ""
+            
+            next_dmcts_state = DREAMRMCTSState(next_dreamr_state, "", state.depth_root+1)
+
         else
             reward += -cmssp.modeswitch_mdp.R[2, 3]
+            car_info = epoch_cars[state.on_car_id]
+            @debug "STAY in SIM!"
+            
             car_pos = get_future_projected_car_position(car_info, curr_time, future_time)
-            new_uav_state = get_state_at_rest(US, car_pos)
-            next_dreamr_state = DREAMRStateType{US}(RIDE, new_uav_state)
+            if car_pos != nothing
+                new_uav_state = get_state_at_rest(US, car_pos)
+                next_dreamr_state = DREAMRStateType{US}(RIDE, new_uav_state)
+                next_dmcts_state = DREAMRMCTSState(next_dreamr_state, state.on_car_id, state.depth_root+1)
+            else
+                # Car has stopped, must get off
+                @debug "STAY cannot be simulated as car has ended by this time"
+                reward += -params.cost_params.INVALID_HOP_PENALTY
+                car_pos = Point(car_info["pos"][1], car_info["pos"][2])
+
+                new_uav_state = get_state_at_rest(US, car_pos)
+                next_dreamr_state = DREAMRStateType{US}(FLIGHT, new_uav_state)
+                next_dmcts_state = DREAMRMCTSState(next_dreamr_state, "", state.depth_root+1)
+            end
         end
     end
 
-    return (next_dreamr_state, reward)
+    if isterminal(dmcts, next_dmcts_state)
+        @info "Terminal state reached in sim!"
+        reward += params.cost_params.FLIGHT_REACH_REWARD
+    end
+
+    return (next_dmcts_state, reward)
 end 
+
+
+function estimate_value_dreamr(dmcts::DREAMRMCTSType, state::DREAMRMCTSState, depth::Int64)
+
+    goal_pos = get_position(dmcts.cmssp.goal_state.continuous)
+    curr_pos = get_position(state.cmssp_state.continuous)
+
+    value = -0.75*dmcts.cmssp.params.cost_params.FLIGHT_COEFFICIENT*point_dist(curr_pos, goal_pos)
+
+    return value
+end

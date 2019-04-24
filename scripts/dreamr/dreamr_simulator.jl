@@ -68,9 +68,7 @@ for iter = 1:num_eps
     @show start_state
 
     # Create CMSSP
-    cmssp = create_dreamr_cmssp(MultiRotorUAVState, MultiRotorUAVAction, Point(0.0, 0.0), params)
-
-    set_dreamr_goal!(cmssp, goal_pos)
+    cmssp = create_dreamr_cmssp(MultiRotorUAVState, MultiRotorUAVAction, context_set, goal_pos, params)
 
     # Create solver
     dreamr_solver = DREAMRSolverType{MultiRotorUAVState,MultiRotorUAVAction,typeof(rng)}(0, modal_policies,
