@@ -1,0 +1,4 @@
+DEPTH = 200
+C = 1.0
+INITN = 1
+NITERS = 250

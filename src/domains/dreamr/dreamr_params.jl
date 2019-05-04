@@ -35,6 +35,7 @@ struct CostParameters
     HOVER_COEFFICIENT::Float64
     TIME_COEFFICIENT::Float64
     FLIGHT_REACH_REWARD::Float64
+    INVALID_HOP_PENALTY::Float64
 end
 
 
@@ -87,7 +88,9 @@ function parse_cost(filename::AbstractString)
     return CostParameters(params_key["FLIGHT_COEFFICIENT"],
                           params_key["HOVER_COEFFICIENT"],
                           params_key["TIME_COEFFICIENT"],
-                          params_key["FLIGHT_REACH_REWARD"])
+                          params_key["FLIGHT_REACH_REWARD"]
+                          ,params_key["INVALID_HOP_PENALTY"]
+                          )
 end
 
 

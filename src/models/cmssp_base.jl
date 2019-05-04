@@ -112,7 +112,7 @@ Return the integer index of the mode-switching action relaty
 """
 function mode_actionindex(cmssp::CMSSP, mode_action::AD) where {AD}
     idx = findfirst(isequal(mode_action), cmssp.mode_actions)
-    @assert idx != nothing "Mode-switch action not present"
+    @assert idx != nothing @show mode_action, cmssp.mode_actions
     return idx
 end
 

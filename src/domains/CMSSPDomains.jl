@@ -71,6 +71,7 @@ export
     HOP_ACTION,
     HOPON, HOPOFF, STAY,
     DREAMRStateType,
+    DREAMRActionType,
     DREAMRBookkeeping,
     DREAMRVertexMetadata,
     DREAMRSolverType,
@@ -84,7 +85,10 @@ export
     get_ride_mdp,
     get_arrival_time_distribution,
     DREAMRDeterministicPolicy,
-    DREAMRMCTSType
+    DREAMRMCTSType,
+    DREAMRMCTSState,
+    estimate_value_dreamr,
+    init_q_dreamr
 
 
 # include("toy_2d.jl")

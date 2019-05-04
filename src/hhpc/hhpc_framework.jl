@@ -10,9 +10,9 @@ Attributes:
     - `start_state::CMSSPState{C,AC}`
     - `goal_modes::Vector{D}`
 """
-mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
+mutable struct HHPCSolver{D,C,AD,M,B,RNG <: AbstractRNG} <: Solver
     graph_tracker::GraphTracker{D,C,AD,M,B,RNG}
-    modal_policies::Dict{D,ModalFinInfHorPolicy}
+    modal_policies::Dict
     replan_time_threshold::Int64
     goal_modes::Vector{D}
     curr_state::CMSSPState{D,C}
@@ -21,14 +21,14 @@ mutable struct HHPCSolver{D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG} <: Solver
     max_steps::Int64
 end
 
-function HHPCSolver{D,C,AD,AC,P,M,B,RNG}(num_samples::Int64, modal_policies::Dict,
-                                            deltaT::Int64, goal_modes::Vector{D},
-                                            start_state::CMSSPState{D,C}, 
-                                            bookkeeping::B, rng::RNG=Random.GLOBAL_RNG,
-                                            heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,AC,CS,P,M,B,RNG <: AbstractRNG}
-    return HHPCSolver{D,C,AD,AC,P,M,B,RNG}(GraphTracker{D,C,AD,M,B,RNG}(num_samples, bookkeeping, rng),
-                                              modal_policies, deltaT, goal_modes,
-                                              start_state, rng, heuristic, max_steps)
+function HHPCSolver{D,C,AD,M,B,RNG}(num_samples::Int64, modal_policies::Dict,
+                                    deltaT::Int64, goal_modes::Vector{D},
+                                    start_state::CMSSPState{D,C}, 
+                                    bookkeeping::B, rng::RNG=Random.GLOBAL_RNG,
+                                    heuristic::Function = n->0, max_steps::Int64=1000) where {D,C,AD,M,B,RNG <: AbstractRNG}
+    return HHPCSolver(GraphTracker{D,C,AD,M,B,RNG}(num_samples, bookkeeping, rng),
+                      modal_policies, deltaT, goal_modes,
+                      start_state, rng, heuristic, max_steps)
 end
 
 
@@ -54,7 +54,6 @@ function edge_weight_fn(solver::HHPCSolver, cmssp::CMSSP,
                         u::OpenLoopVertex, v::OpenLoopVertex)
 
     # u's state to v's pre-state should be in a single region
-    # @show u,v
     @assert u.state.mode == v.pre_bridge_state.mode
 
     # We care about relative tp_dist between u and v
@@ -85,8 +84,6 @@ function edge_weight_fn(solver::HHPCSolver, cmssp::CMSSP,
     end
 
     edge_weight = -1.0*pol_value
-
-    # @show edge_weight
 
     # Also add the cost due to the assumed mode switch
     if v.pre_bridge_state.mode != v.state.mode
@@ -120,11 +117,11 @@ end
     @req isterminal(::MDPType, ::C)
 
     # Global layer requirements
-    @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker))
+    @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::Int64)
     @req generate_goal_vertex_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D)
     @req generate_bridge_vertex_set!(::P, ::OpenLoopVertex{D,C,AD,M}, ::Tuple{D,D}, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
-    @req update_next_target!(::P, ::typeof(solver))
+    @req update_next_target!(::P, ::typeof(solver), ::Int64)
     @req zero(::M)    
 
     # Local layer requirements
@@ -164,25 +161,26 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
     # Diagnostic info
     total_cost = 0.0
     successful = false
+    mode_switches = 0
 
-    start_metadata = zero(M)
+    start_metadata = zero(metadatatype(solver.graph_tracker))
+
+    next_target = nothing
 
     while t <= solver.max_steps
 
-        @show solver.curr_state, t
-        # @show t
+        @debug solver.curr_state, t, plan
 
         if plan == true
-            println("Open loop plan!")
-            @time open_loop_plan!(cmssp, solver.curr_state, t, edge_weight, solver.heuristic,
+            open_loop_plan!(cmssp, solver.curr_state, t, edge_weight, solver.heuristic,
                                   solver.goal_modes, solver.graph_tracker, start_metadata)
-            readline()
+            # readline()
             last_plan_time = t
             plan = false
             next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
         else
-            if is_inf_hor(next_target.tp_dist)
-                valid_update = update_next_target!(cmssp, solver)
+            if is_inf_hor(next_target.tp) == false
+                valid_update = update_next_target!(cmssp, solver, t)
 
                 if valid_update == false
                     plan = false
@@ -194,16 +192,16 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
 
         # now do work for macro-actions 
          # Second vertex in full plan
-        start_metadata = next_target.metadata
-        @show next_target
+        # start_metadata = next_target.metadata
+        @debug next_target
 
         # Check if 'terminal' state as per modal MDP
         @assert solver.curr_state.mode == next_target.pre_bridge_state.mode
 
         relative_time = mean(next_target.tp) - t
-        @show relative_time
+        @debug relative_time
 
-        if relative_time < 1
+        if relative_time < 2
 
             curr_action = get_bridging_action(next_target)
             
@@ -218,23 +216,27 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
                                                      next_target.tp, 
                                                      solver.curr_state.continuous, 
                                                      next_target.pre_bridge_state.continuous)
-            curr_action = curr_action.action
+            if curr_action != nothing
+                curr_action = curr_action.action
+            end
         end
 
-        @show curr_action
-        readline()
+        @debug curr_action
+        # readline()
 
-        temp_full_action = CMSSPAction{AD,AC}(curr_action, 1)
+        if curr_action != nothing
+            temp_full_action = CMSSPAction{AD,AC}(curr_action, 1)
+        else
+            temp_full_action = nothing
+        end
 
         # If curr_action = NOTHING, means interrupt
         # So simulator should handle NOTHING
         # Will typically be bound to other environment variables
         # update_context_set!(cmssp, solver.rng)
-        (new_state, reward, failed_mode_switch) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, solver.rng)
+        (new_state, reward, failed_mode_switch, timeout) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, solver.rng)
         t = t+1
         total_cost += -1.0*reward
-
-        # @show new_state
 
         # RCH hack - reset to 0 at every mode change
         if new_state.mode != solver.curr_state.mode
@@ -246,16 +248,28 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
             plan = true
         end
 
+        if new_state.mode != solver.curr_state.mode
+            start_metadata = next_target.metadata
+            mode_switches += 1
+        end
+
         # Update current state and context
         solver.curr_state = new_state
+
+        @debug new_state
 
         # Check terminal conditions
         if POMDPs.isterminal(cmssp, solver.curr_state)
             successful = true
             break
         end
+
+        if timeout
+            successful = false
+            break
+        end
     end
 
     # TODO : Diagnostics
-    return total_cost, t, successful
+    return total_cost, t, successful, mode_switches
 end

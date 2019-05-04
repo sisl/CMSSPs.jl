@@ -12,23 +12,24 @@ using Distributions
 using CMSSPs
 
 # Read parameters from file
-# scale_file = ARGS[1]
-# simtime_file = ARGS[2]
-# cost_file = ARGS[3]
-# policy_name = ARGS[4]
-# poly_or_exp = ARGS[5]
+scale_file = ARGS[1]
+simtime_file = ARGS[2]
+cost_file = ARGS[3]
+policy_name = ARGS[4]
+poly_or_exp = ARGS[5]
+beta = parse(Float64, ARGS[6])
 
-scale_file = "./paramsets/scale-1.toml"
-simtime_file = "./paramsets/simtime-1.toml"
-cost_file = "./paramsets/cost-1.toml"
-policy_name = "dreamr-cf-params1-betapt75"
-poly_or_exp = "poly"
+# scale_file = "./paramsets/scale-1.toml"
+# simtime_file = "./paramsets/simtime-1.toml"
+# cost_file = "./paramsets/cost-1.toml"
+# policy_name = "dreamr-cf-params1-betapt75"
+# poly_or_exp = "poly"
 
 rng = MersenneTwister(10)
 
 params = parse_params(scale_file=scale_file, simtime_file=simtime_file, cost_file=cost_file)
 
-cf_mdp = get_cf_mdp(MultiRotorUAVState, MultiRotorUAVAction, params, 0.75)
+cf_mdp = get_cf_mdp(MultiRotorUAVState, MultiRotorUAVAction, params, beta)
 
 if poly_or_exp == "poly"
 
