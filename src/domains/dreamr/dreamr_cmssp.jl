@@ -519,7 +519,7 @@ function HHPC.update_next_target!(cmssp::DREAMRCMSSPType, solver::DREAMRSolverTy
 end
 
 
-function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateType{US}, a::DREAMRActionType{UA}, t::Int64,
+function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateType{US}, a::Union{Nothing,DREAMRActionType{UA}}, t::Int64,
                               rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
 
     # Update context

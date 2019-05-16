@@ -131,8 +131,7 @@ end
     @req convert_s(::Type{C},::V where V <: AbstractVector{Float64}, ::MDPType)
 
     # HHPC requirements
-    @req simulate_cmssp!(::P, ::S, ::A, ::Int64, ::RNG where {RNG <: AbstractRNG})
-    # @req update_context_set!(::P, ::RNG where {RNG <: AbstractRNG})
+    @req simulate_cmssp!(::P, ::S, ::Union{Nothing, A}, ::Int64, ::RNG where {RNG <: AbstractRNG})
     @req get_bridging_action(::OpenLoopVertex{D, C, AD, M})
     @req display_context_future(::CS, ::Int64)
 

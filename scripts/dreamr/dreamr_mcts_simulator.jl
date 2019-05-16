@@ -46,10 +46,13 @@ estimate_value(dmcts::DREAMRMCTSType, state::DREAMRMCTSState, depth::Int64) = es
 init_Q(dmcts::DREAMRMCTSType, state::DREAMRMCTSState, a::DREAMRActionType) = init_q_dreamr(flight_policy, dmcts, state, a)
 
 
-ep_file_prefix = "/scratch/shushman/HitchhikingDrones/set-2-hard/set-2-100-to-1000"
-num_eps = parse(Int64, ARGS[3])
+# ep_file_prefix = "/scratch/shushman/HitchhikingDrones/set-2-hard/set-2-100-to-1000"
 mcts_param_file = ARGS[1]
 outfn = ARGS[2]
+num_eps = parse(Int64, ARGS[3])
+ep_file_prefix = ARGS[4]
+log_out_file_prefix = ARGS[5]
+to_log = parse(Bool,ARGS[6])
 
 
 # ep_file_prefix = ARGS[1]
@@ -83,6 +86,14 @@ for iter=1:num_eps
 
     start_pos = Point(episode_dict["start_pos"][1], episode_dict["start_pos"][2])
     goal_pos = Point(episode_dict["goal_pos"][1], episode_dict["goal_pos"][2])
+
+    log_soln_dict = Dict()
+    if to_log
+        log_fn = string(log_out_file_prefix,"-",iter,"-output.json")
+        log_soln_dict["start_pos"] = episode_dict["start_pos"]
+        log_soln_dict["goal_pos"] = episode_dict["goal_pos"]
+        log_soln_dict["epochs"] = Dict(0 => Dict("drone-info"=>Dict("pos"=>[start_pos.x,start_pos.y], "on_car"=>"")))
+    end
 
     start_state = DREAMRStateType{MultiRotorUAVState}(FLIGHT, get_state_at_rest(MultiRotorUAVState, start_pos))
 
@@ -133,6 +144,11 @@ for iter=1:num_eps
         timesteps += 1
         # @debug timesteps
 
+        if to_log
+            log_soln_dict["epochs"][timesteps] = Dict("drone-info"=>Dict("pos"=>[next_state.continuous.x, next_state.continuous.y],
+                                                  "on_car"=>cmssp.curr_context_set.car_id))
+        end
+
         if isterminal(dmcts, curr_dmcts_state)
             successful = true
             break
@@ -150,9 +166,20 @@ for iter=1:num_eps
         push!(costs, energy_cost)
         push!(steps, timesteps)
         push!(mode_switches, num_mode_switches)
+
+        log_soln_dict["num_epochs"] = timesteps+1
+        log_soln_dict["success"] = false
+        if to_log
+            open(log_fn,"w") do f
+                JSON.print(f, log_soln_dict, 2)
+            end
+        end
     else
         @info "unsuccessful"
         push!(unsuccessful, iter)
+
+        log_soln_dict["num_epochs"] = episode_dict["num_epochs"]
+        log_soln_dict["success"] = true
     end
 end
 
