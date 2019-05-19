@@ -33,20 +33,3 @@ function interpolate(p1::Point,p2::Point,frac::Float64)
     return Point(xval,yval)
 
 end
-
-# mutable struct Car
-#     route_idx_range::MVector{2, Int} # Size 2 but needs to be changeable
-#     cargo_drone_idx::Int # 0 if no drone
-#     capacity::Int
-#     active::Bool
-# end
-
-# # Default constructor for inactive car - unlikely to be used
-# InactiveCar() = Car([0,0], 0, 1,false)
-
-# # Constuctor for newly introduced car
-# function Car(idx_range::V) where {V <: AbstractVector{Int}} 
-#     @assert length(idx_range) == 2 "Index Range should be of length 2"
-#     return Car(idx_range, 0, 1, true)
-# end
-

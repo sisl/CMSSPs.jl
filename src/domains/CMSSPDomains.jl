@@ -17,7 +17,6 @@ using POMDPModels
 using POMDPPolicies
 using POMDPSimulators
 using Graphs
-using MCTS
 
 # For reading params
 using TOML
@@ -72,6 +71,7 @@ export
     HOP_ACTION,
     HOPON, HOPOFF, STAY,
     DREAMRStateType,
+    DREAMRActionType,
     DREAMRBookkeeping,
     DREAMRVertexMetadata,
     DREAMRSolverType,
@@ -87,7 +87,8 @@ export
     DREAMRDeterministicPolicy,
     DREAMRMCTSType,
     DREAMRMCTSState,
-    estimate_value_dreamr
+    estimate_value_dreamr,
+    init_q_dreamr
 
 
 # include("toy_2d.jl")

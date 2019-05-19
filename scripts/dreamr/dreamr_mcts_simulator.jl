@@ -13,8 +13,22 @@ using JSON
 using CMSSPs
 using MCTS
 using Logging
+using TOML
 
-global_logger(SimpleLogger(stderr, Logging.Debug))
+
+struct MCTSParams
+    depth::Int64
+    exploration::Float64
+    init_N::Int64
+    n_iters::Int64
+end
+
+function parse_mcts_params(filename::String)
+    params_key = TOML.parsefile(filename)
+    return MCTSParams(params_key["DEPTH"], params_key["C"], params_key["INITN"], params_key["NITERS"])
+end
+
+global_logger(SimpleLogger(stderr, Logging.Warn))
 
 rng = MersenneTwister(3456)
 
@@ -24,14 +38,37 @@ scale_file = param_files[1]
 simtime_file = param_files[2]
 cost_file = param_files[3]
 
-episode_args = ["./trial-data/mcts-test-ep", 1]
+# Load flight policy and create an alias for estimate value
+infhor_fn = "./dreamr-uf-params111.jld2"
+flight_policy = load_localapproxvi_policy_from_jld2(infhor_fn)
+estimate_value(dmcts::DREAMRMCTSType, state::DREAMRMCTSState, depth::Int64) = estimate_value_dreamr(flight_policy, dmcts, state, depth)
 
-ep_file_prefix = episode_args[1]
-num_eps = episode_args[2]
+init_Q(dmcts::DREAMRMCTSType, state::DREAMRMCTSState, a::DREAMRActionType) = init_q_dreamr(flight_policy, dmcts, state, a)
+
+
+# ep_file_prefix = "/scratch/shushman/HitchhikingDrones/set-2-hard/set-2-100-to-1000"
+mcts_param_file = ARGS[1]
+outfn = ARGS[2]
+num_eps = parse(Int64, ARGS[3])
+ep_file_prefix = ARGS[4]
+log_out_file_prefix = ARGS[5]
+to_log = parse(Bool,ARGS[6])
+
+
+# ep_file_prefix = ARGS[1]
+# num_eps = parse(Int64, ARGS[2])
+# mcts_param_file = ARGS[3]
+# outfn = ARGS[4]
 
 params = parse_params(scale_file=scale_file, simtime_file=simtime_file, cost_file=cost_file)
+mcts_params = parse_mcts_params(mcts_param_file)
 
-const DEPTH = 100
+
+costs = Vector{Float64}(undef, 0)
+steps = Vector{Int64}(undef, 0)
+mode_switches = Vector{Int64}(undef, 0)
+unsuccessful = Vector{Int64}(undef, 0)
+
 
 for iter=1:num_eps
 
@@ -50,10 +87,19 @@ for iter=1:num_eps
     start_pos = Point(episode_dict["start_pos"][1], episode_dict["start_pos"][2])
     goal_pos = Point(episode_dict["goal_pos"][1], episode_dict["goal_pos"][2])
 
+    log_soln_dict = Dict()
+    if to_log
+        log_fn = string(log_out_file_prefix,"-",iter,"-output.json")
+        log_soln_dict["start_pos"] = episode_dict["start_pos"]
+        log_soln_dict["goal_pos"] = episode_dict["goal_pos"]
+        log_soln_dict["epochs"] = Dict(0 => Dict("drone-info"=>Dict("pos"=>[start_pos.x,start_pos.y], "on_car"=>"")))
+    end
+
     start_state = DREAMRStateType{MultiRotorUAVState}(FLIGHT, get_state_at_rest(MultiRotorUAVState, start_pos))
 
-    @show start_state
-    @show goal_pos
+    # @show start_state
+    # @show goal_pos
+    # readline()
 
     # Create CMSSP
     cmssp = create_dreamr_cmssp(MultiRotorUAVState, MultiRotorUAVAction, context_set, goal_pos, params)
@@ -61,32 +107,85 @@ for iter=1:num_eps
     dmcts = DREAMRMCTSType(cmssp)
 
     # Create solver and planner
-    solver = DPWSolver(depth=DEPTH, rng=rng, estimate_value=estimate_value_dreamr)
+    solver = DPWSolver(depth=mcts_params.depth,
+                       exploration_constant = mcts_params.exploration,
+                       init_N = mcts_params.init_N,
+                       n_iterations = mcts_params.n_iters,
+                       estimate_value=estimate_value,
+                       # init_Q = init_Q,
+                       rng=rng)
     planner = solve(solver, dmcts)
 
     curr_dmcts_state = DREAMRMCTSState(start_state)
-    t = 0
-    tot_cost = 0
+    
+    timesteps = 0
+    cost = 0
+    num_mode_switches = 0
+    successful = false
 
     while true
         
-        @show curr_dmcts_state
+        # @debug curr_dmcts_state
         a = action(planner, curr_dmcts_state)
-        @show a
+        # @debug a
+
         # readline()
-        (next_state, reward, _) = simulate_cmssp!(dmcts.cmssp, curr_dmcts_state.cmssp_state, a, t, rng)
 
-        tot_cost += -1.0*reward
+        (next_state, reward, _, timeout) = simulate_cmssp!(dmcts.cmssp, curr_dmcts_state.cmssp_state, a, timesteps, rng)
 
-        curr_dmcts_state = DREAMRMCTSState(next_state, cmssp.curr_context_set.curr_car_id, 0)
+        if next_state.mode != curr_dmcts_state.cmssp_state.mode
+            num_mode_switches += 1
+        end
 
-        t += 1
-        @show t
+        cost += -1.0*reward
+
+        curr_dmcts_state = DREAMRMCTSState(next_state, cmssp.curr_context_set.car_id, 0)
+
+        timesteps += 1
+        # @debug timesteps
+
+        if to_log
+            log_soln_dict["epochs"][timesteps] = Dict("drone-info"=>Dict("pos"=>[next_state.continuous.x, next_state.continuous.y],
+                                                  "on_car"=>cmssp.curr_context_set.car_id))
+        end
 
         if isterminal(dmcts, curr_dmcts_state)
+            successful = true
+            break
+        end
+
+        if timeout
+            @debug "Timeout!"
             break
         end
     end
 
-    @show tot_cost
+    if successful
+        energy_cost = cost - params.cost_params.TIME_COEFFICIENT*params.time_params.MDP_TIMESTEP*timesteps
+        @show energy_cost
+        push!(costs, energy_cost)
+        push!(steps, timesteps)
+        push!(mode_switches, num_mode_switches)
+
+        log_soln_dict["num_epochs"] = timesteps+1
+        log_soln_dict["success"] = false
+        if to_log
+            open(log_fn,"w") do f
+                JSON.print(f, log_soln_dict, 2)
+            end
+        end
+    else
+        @info "unsuccessful"
+        push!(unsuccessful, iter)
+
+        log_soln_dict["num_epochs"] = episode_dict["num_epochs"]
+        log_soln_dict["success"] = true
+    end
+end
+
+results_dict = Dict("costs"=>costs, "steps"=>steps, "mode_switches"=>mode_switches, "failed_iters"=>unsuccessful)
+
+
+open(outfn, "w") do f
+    JSON.print(f, results_dict, 2)
 end

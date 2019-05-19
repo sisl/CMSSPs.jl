@@ -88,8 +88,9 @@ function parse_cost(filename::AbstractString)
     return CostParameters(params_key["FLIGHT_COEFFICIENT"],
                           params_key["HOVER_COEFFICIENT"],
                           params_key["TIME_COEFFICIENT"],
-                          params_key["FLIGHT_REACH_REWARD"],
-                          params_key["INVALID_HOP_PENALTY"])
+                          params_key["FLIGHT_REACH_REWARD"]
+                          ,params_key["INVALID_HOP_PENALTY"]
+                          )
 end
 
 

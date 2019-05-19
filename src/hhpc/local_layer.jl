@@ -379,10 +379,10 @@ function horizon_weighted_actionvalue(modal_policy::ModalHorizonPolicy, curr_tim
 
         if h > mdp.horizon_limit
             temp_state = ModalStateAugmented(temp_relative_state, mdp.horizon_limit+1)
-            total_value += p*action_value(modal_policy.out_horizon_policy, temp_state, a)
+            total_value += p*value(modal_policy.out_horizon_policy, temp_state, a)
         else
             temp_state = ModalStateAugmented(temp_relative_state, h)
-            total_value += p*action_value(modal_policy.in_horizon_policy, temp_state, a)
+            total_value += p*value(modal_policy.in_horizon_policy, temp_state, a)
         end
     end
 
