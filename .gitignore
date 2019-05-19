@@ -3,3 +3,4 @@
 *.jl.mem
 deps/deps.jl
 *.jld2
+scripts/dreamr/results/
