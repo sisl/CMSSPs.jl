@@ -6,6 +6,7 @@ Attributes:
     - `modal_policies::Dict{D,Policy}` A map from the mode to the modal policies (in and out-horizon)
     - `replan_time_threshold::Int64` The Delta T parameter for periodic replanning (discrete time-steps)
     - `heuristic::Function` The heuristic method for the global layer
+    - `curr_state::CMSSPState{D,C}` The current state of the agent, tracked by the solver.
     - `max_steps::Int64` The maximum length of a problem episode (may not be applicable)
     - `start_state::CMSSPState{C,AC}`
     - `goal_modes::Vector{D}`
@@ -236,11 +237,6 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
         (new_state, reward, failed_mode_switch, timeout) = simulate_cmssp!(cmssp, solver.curr_state, temp_full_action, t, solver.rng)
         t = t+1
         total_cost += -1.0*reward
-
-        # RCH hack - reset to 0 at every mode change
-        if new_state.mode != solver.curr_state.mode
-            inf_hor_rch = 0
-        end
 
         if curr_action == nothing || failed_mode_switch || t - last_plan_time > solver.replan_time_threshold ||
             new_state.mode != solver.curr_state.mode

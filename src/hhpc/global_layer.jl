@@ -3,12 +3,11 @@ Data structure used by open-loop layer to update current high-level plan.
 
 Attributes:
     - `curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD}}` A list of vertices generated so far by the bridge sampler
-    - `mode_switch_idx_range::Dict{Tuple{D,D},MVector{2,Int64}}` The range for the subvector of vertices generated for a particular mode switch.
-    Is updated in place by update_graph_tracker!
     - `curr_start_idx::Int64` The vertex index of the current start vertex in the graph, from which planning will happen. Updated each time open_loop_plan is called
     - `curr_goal_idx::Int64` The vertex index of current goal vertex. Updated each time a goal state vertex is popped.
     - `curr_soln_path_idxs::Vector{Int64}` The in-order list of indices from current start to current goal
     - `num_samples::Int64` The N parameter for the number of bridge samples to generate per mode switch
+    - `bookkeeping::B` A data structure for tracking information pertaining to the graph search
 """
 mutable struct GraphTracker{D,C,AD,M,B,RNG <: AbstractRNG}
     curr_graph::SimpleVListGraph{OpenLoopVertex{D,C,AD,M}}
@@ -23,12 +22,6 @@ end
 metadatatype(::GraphTracker{D,C,AD,M,B,RNG}) where {D,C,AD,M,B,RNG <: AbstractRNG} = M
 bookkeepingtype(::GraphTracker{D,C,AD,M,B,RNG}) where {D,C,AD,M,B,RNG <: AbstractRNG} = B
 
-# TODO : Do we need the types sent as args?
-# function GraphTracker(N::Int64, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,RNG <: AbstractRNG}
-#     return GraphTracker(SimpleVListGraph{OpenLoopVertex{D,C,AD}}(),
-#                         Dict{Tuple{D,D},MVector{2,Int64}}(),
-#                         0,0,Vector{Int64}(undef,0),N,rng)
-# end
 
 function GraphTracker{D,C,AD,M,B,RNG}(N::Int64, bookkeeping::B, rng::RNG=Random.GLOBAL_RNG) where {D,C,AD,M,B,RNG <: AbstractRNG}
     return GraphTracker{D,C,AD,M,B,RNG}(SimpleVListGraph{OpenLoopVertex{D,C,AD,M}}(),
@@ -41,10 +34,12 @@ Open loop plan from current state from scratch. Return a graph tracker with solu
 Arguments:
     - `cmssp::CMSSP{D,C,AD,AC}` The CMSSP instance
     - `s_t::CMSSPState{D,C}` The current state
+    - `curr_time::Int64` The current time step value
     - `edge_weight::Function` A generic edge weight function (handed down by hhpc solver)
     - `heuristic::Function` A generic heuristic function (handed down by hhpc solver)
     - `goal_modes::Vector{D}` A set of modes that are goal conditions
     - `graph_tracker::GraphTracker{D,C}` The instance of the object that maintains the current open-loop graph
+    - `start_metadata::M` Default metadata for a new start vertex
 
 Returns:
     Updates the `graph_tracker` object in place.
@@ -107,7 +102,7 @@ end
 
 
 """
-The visitor object for the implicit A* search. Attributes obvious.
+The visitor object for the implicit A* search. Attributes are obvious.
 """
 struct GoalVisitorImplicit <: AbstractDijkstraVisitor
     graph_tracker::GraphTracker
@@ -154,8 +149,6 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # Now add for next modes
     next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode)
 
-    # @show next_valid_modes
-    # @show vis.graph_tracker.mode_switch_idx_range
 
     for (action, nvm) in next_valid_modes
             

@@ -16,10 +16,6 @@ global_logger(SimpleLogger(stderr, Logging.Error))
 
 rng = MersenneTwister(3456)
 
-# inhor_fn = "./dreamr-cf-params111-betapt75-inhor.jld2"
-# outhor_fn = "./dreamr-cf-params111-betapt75-outhor.jld2"
-# infhor_fn = "./dreamr-uf-params111.jld2"
-
 param_files = ["./paramsets/scale-1.toml","./paramsets/simtime-1.toml","./paramsets/cost-1.toml"]
 
 scale_file = param_files[1]
@@ -29,7 +25,7 @@ cost_file = param_files[3]
 
 inhor_fn = ARGS[1]
 outhor_fn = ARGS[2]
-infhor_fn = "./dreamr-uf-params111.jld2"
+infhor_fn = "./policies/dreamr-uf-params111.jld2"
 
 ep_file_prefix = ARGS[3]
 num_eps = parse(Int64, ARGS[4])

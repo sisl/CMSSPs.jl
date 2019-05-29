@@ -14,11 +14,12 @@ using CMSSPs
 
 rng = MersenneTwister(5678)
 
-inhor_fn = "./dreamr-cf-params111-betapt75-inhor.jld2"
-outhor_fn = "./dreamr-cf-params111-betapt75-outhor.jld2"
+inhor_fn = ARGS[1]
+outhor_fn = ARGS[2]
+beta = parse(Float64, ARGS[3])
 
 arguments = ["./paramsets/scale-1.toml","./paramsets/simtime-1.toml",
-        "./paramsets/cost-1.toml", "30"]
+             "./paramsets/cost-1.toml", "30"]
 
 scale_file = arguments[1]
 simtime_file = arguments[2]
@@ -29,7 +30,7 @@ num_trials = parse(Int64, arguments[4])
 params = parse_params(scale_file=scale_file, simtime_file=simtime_file, cost_file=cost_file)
 
 # Get MDP and policy - DIFFERENT SEEDS
-cf_mdp = get_cf_mdp(MultiRotorUAVState, MultiRotorUAVAction, params, 0.75)
+cf_mdp = get_cf_mdp(MultiRotorUAVState, MultiRotorUAVAction, params, beta)
 hopon_policy = load_modal_horizon_policy_localapprox(inhor_fn, outhor_fn)
 
 
@@ -54,7 +55,7 @@ for i = 1:num_trials
 
         # @show curr_state, mean(sim.time_to_finish)
 
-        tp_dist = get_arrival_time_distribution(mean(sim.time_to_finish), params, rng)
+        tp_dist = get_arrival_time_distribution(0, mean(sim.time_to_finish), params, rng)
 
         a = get_best_intramodal_action(hopon_policy, 0, tp_dist, curr_state, goal_state)
         # @show a

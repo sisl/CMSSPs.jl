@@ -15,10 +15,6 @@ struct ModalFinInfHorPolicy{P <: Policy, Q <: Policy}
     inf_hor_policy::Q
 end
 
-# function ModalFinInfHorPolicy(fhp::Union{P,ModalHorizonPolicy{P}}, ihp::Q) where {P <: Policy, Q <: Policy}
-#     return ModalFinInfHorPolicy(fhp, ihp)
-# end
-
 
 """
 CMSSP State augmented with horizon value. Needed for LocalApproximationVI
@@ -53,6 +49,7 @@ Attributes:
     - `min_value_per_horizon::Vector{Float64}` The worst cost or min value from each horizon value
     - `terminal_cost_penalty::Float64` The phi_CF value
     - `terminal_costs_set::Bool` Flag used for out-horizon vs in-horizon VI
+    - `params::P` For tracking any other parameters used by the solver.
 """
 mutable struct ModalFinHorMDP{D,C,AC,P} <: POMDPs.MDP{ModalStateAugmented{C},ModalAction{AC}}
     mode::D
@@ -180,8 +177,6 @@ This version uses a local function approximator.
 
 Arguments:
     - `mdp::ModalFinHorMDP{D,C,AC}`
-    - `cmssp::CMSSP{D,C,AD,AC}`
-    - `mode::D`
     - `lfa::LFA` A LocalFunctionApproximator object for the value iteration
 """
 function compute_terminalcost_localapprox!(mdp::ModalFinHorMDP{D,C,AC,P}, lfa::LFA) where {D,C,AC,P,LFA <: LocalFunctionApproximator}
@@ -271,7 +266,6 @@ end
 Compute the worst cost or minimum value per horizon and update mdp object in place.
 
 Arguments:
-    - `mdp::ModalFinHorMDP{D,C,AC}`
     - `modal_policy::ModalHorizonPolicy{P}`
 """
 function compute_min_value_per_horizon_localapprox!(modal_policy::ModalHorizonPolicy)
@@ -301,7 +295,6 @@ Compute the negative value of the relative state between current and target. The
 distribution over horizons.
 
 Arguments:
-    - `mdp::ModalFinHorMDP{D,C,AC}`
     - `modal_policy::ModalHorizonPolicy`
     - `curr_timestep::Int64` The current system time
     - `tp_dist::TPDistribution` The distribution over GLOBAL times for reaching target state
@@ -351,7 +344,6 @@ Compute the negative value of the relative state between current and target. The
 distribution over horizons.
 
 Arguments:
-    - `mdp::ModalFinHorMDP{D,C,AC}`
     - `modal_policy::ModalHorizonPolicy`
     - `curr_timestep::Int64` The current system time
     - `tp_dist::TPDistribution` The distribution over GLOBAL times for reaching target state
@@ -394,7 +386,6 @@ end
 Returns action with lowest average cost (i.e. highest average value, since value is negative cost)
 
 Arguments:
-    - `mdp::ModalFinHorMDP{D,C,AC}`
     - `modal_policy::ModalHorizonPolicy`
     - `curr_timestep::Int64` The current system time
     - `tp_dist::TPDistribution` The distribution over GLOBAL times for reaching target state

@@ -39,7 +39,7 @@ simtime_file = param_files[2]
 cost_file = param_files[3]
 
 # Load flight policy and create an alias for estimate value
-infhor_fn = "./dreamr-uf-params111.jld2"
+infhor_fn = "./policies/dreamr-uf-params111.jld2"
 flight_policy = load_localapproxvi_policy_from_jld2(infhor_fn)
 estimate_value(dmcts::DREAMRMCTSType, state::DREAMRMCTSState, depth::Int64) = estimate_value_dreamr(flight_policy, dmcts, state, depth)
 
