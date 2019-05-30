@@ -92,6 +92,8 @@ export
 
 
 # include("toy_2d.jl")
+include("grids_continuum_2d.jl")
+
 include("dreamr/dreamr_types.jl")
 include("dreamr/dreamr_params.jl")
 include("dreamr/dreamr_dynamics.jl")

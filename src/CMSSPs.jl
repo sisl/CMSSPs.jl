@@ -20,10 +20,6 @@ using PDMats
 using TOML
 
 
-# Requirements
-# simulate - which accepts action as Nothing
-# initial_state
-
 # Include submodule files
 include("models/CMSSPModel.jl")
 include("hhpc/HHPC.jl")
