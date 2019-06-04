@@ -286,6 +286,7 @@ end
 function HHPC.generate_bridge_vertex_set!(cmssp::DREAMRCMSSPType, vertex::DREAMROpenLoopVertex,
                                          mode_pair::DREAMRModePair,
                                          graph_tracker::DREAMRGraphTracker,
+                                         action::DREAMRModeAction,
                                          rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
     # NOTE - Will never actually generate anything; only get neighbour idxs

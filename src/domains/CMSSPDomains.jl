@@ -92,7 +92,7 @@ export
 
 
 # include("toy_2d.jl")
-include("grids_continuum_2d.jl")
+include("grids_continuum.jl")
 
 include("dreamr/dreamr_types.jl")
 include("dreamr/dreamr_params.jl")

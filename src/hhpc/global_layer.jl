@@ -53,7 +53,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
                          start_metadata::M) where {D,C,AD,M,B,RNG <: AbstractRNG} 
 
     # First update the context
-    update_vertices_with_context!(cmssp, graph_tracker, curr_time::Int64)
+    update_vertices_with_context!(cmssp, graph_tracker, curr_time)
 
     # Create start vertex and insert in graph
     # Don't need explicit goal - visitor will handle
@@ -156,6 +156,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
         (vertices_to_add, nbrs_to_add) = generate_bridge_vertex_set!(vis.cmssp, v, 
                                                                     (popped_mode, nvm),
                                                                     vis.graph_tracker,
+                                                                    action,
                                                                     vis.graph_tracker.rng)
         for nbr_idx in nbrs_to_add
             push!(nbrs, nbr_idx)
