@@ -16,7 +16,7 @@ const GridsContinuumContextType = Dict{Tuple{Int64, Int64}, Vec2}
 mutable struct GridsContinuumContextSet
     curr_timestep::Int64
     curr_context::GridsContinuumContextType
-    future_context::Vector{GridsContinuumContextType}
+    future_contexts::Vector{GridsContinuumContextType}
 end
 
 Base.zero(Nothing) = nothing
@@ -148,16 +148,16 @@ function HHPC.generate_bridge_vertex_set!(cmssp::GridsContinuumCMSSPType, vertex
                                           action::Int64, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
     context_set = cmssp.curr_context_set
-    future_context = context_set.future_context # Vector of contexts
+    future_contexts = context_set.future_contexts # Vector of contexts
     curr_timestep = context_set.curr_timestep
     params = cmssp.params
 
     vertices_to_add = Vector{GridsContinuumOLV}(undef, 0)
 
-    @assert !isempty(future_context)
-    avg_samples = convert(Int64, ceil(cmssp.params.num_bridge_samples/length(future_context)))
+    @assert !isempty(future_contexts)
+    avg_samples = convert(Int64, ceil(cmssp.params.num_bridge_samples/length(future_contexts)))
 
-    for (hor, context) in enumerate(future_context)
+    for (hor, context) in enumerate(future_contexts)
 
         # Iterate over (M1,M2) -> point
         for (mpair, switch_point) in context
@@ -192,11 +192,11 @@ end
 function HHPC.generate_next_valid_modes(cmssp::GridsContinuumCMSSPType, mode::Int64)
 
     context_set = cmssp.curr_context_set
-    future_context = context_set.future_context
+    future_contexts = context_set.future_contexts
 
     next_actions_modes = Vector{Tuple{Int64, Int64}}(undef, 0)
 
-    for (hor, context) in enumerate(future_context) # Vector of dictionaries
+    for (hor, context) in enumerate(future_contexts) # Vector of dictionaries
 
         for (mpair, switch_point) in context # Iterate over current dictionary
 
@@ -226,6 +226,104 @@ end
 function HHPC.update_next_target!(cmssp::GridsContinuumCMSSPType, solver::GridsContinuumSolverType, curr_timestep::Int64)
     return
 end
+
+
+function set_start_context_set!(cmssp::GridsContinuumCMSSPType,  rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+
+    params = cmssp.params
+    init_context = GridsContinuumContextType()
+
+    # Generate initial switch point regions
+    for m1 in cmssp.modes
+        for m2 in cmssp.modes
+            for a in cmssp.mode_actions
+                if cmssp.modeswitch_mdp.T[m1, a ,m2] > 0.0
+                    switch_point = sample_continuum_state(rng)
+                    init_context[(m1, m2)] = switch_point
+                end
+            end
+        end
+    end
+
+    future_contexts = Vector{GridsContinuumContextType}(undef, 0)
+    temp_context = init_context
+
+    # Sample within a radius of twice the epsilon value
+    r = 2.0*params.epsilon
+
+    for idx = 1:params.horizon_limit
+
+        next_context = GridsContinuumContextType()
+
+        # Iterate over current switch points and sample around them
+        for (mpair, switch_point) in temp_context
+
+            theta = rand(rng, Uniform(0.0, 2.0*pi))
+            new_pt1 = clamp(switch_point[1] + r*cos(theta), 0.0, 1.0)
+            new_pt2 = clamp(switch_point[2] + r*sin(theta), 0.0, 1.0)
+            new_point = Vec2(new_pt1, new_pt2)
+
+            next_context[mpair] = new_point
+        end
+
+        push!(future_contexts, next_context)
+        temp_context = next_context
+    
+    end
+
+    cmssp.curr_context_set = GridsContinuumContextSet(0, init_context, future_contexts)
+end
+
+
+
+function HHPC.update_context_set!(cmssp::GridsContinuumCMSSPType, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+
+    curr_context_set = cmssp.curr_context_set
+
+    # Update timestep
+    curr_context_set.timestep += 1
+
+    # First update the current context based on the first future context
+    curr_context = curr_context_set.curr_context
+    next_context = curr_context_set.future_contexts[1]
+    new_curr_context = GridsContinuumContextType()
+
+    for (mpair, curr_switch_point) in curr_context
+
+        next_switch_point = next_context[mpair]
+
+        # Choose an interpolated point between curr and next chosen switch point
+        interp_frac = rand(rng, Uniform(0.5, 1.0))
+        new_switch_point = curr_switch_point + interp_frac*(next_switch_point - curr_switch_point)
+        new_curr_context[mpair] = new_switch_point
+    end
+
+    # Update new current context
+    curr_context_set.curr_context = new_curr_context
+
+    # Pop first future context
+    popfirst!(curr_context_set.future_contexts)
+
+    # Add a new future context
+    pre_final_context = curr_context_set.future_contexts[end]
+    new_final_context = GridsContinuumContextType()
+
+    for (mpair, switch_point) in pre_final_context
+
+        theta = rand(rng, Uniform(0.0, 2.0*pi))
+        new_pt1 = clamp(switch_point[1] + r*cos(theta), 0.0, 1.0)
+        new_pt2 = clamp(switch_point[2] + r*sin(theta), 0.0, 1.0)
+        new_point = Vec2(new_pt1, new_pt2)
+
+        new_final_context[mpair] = new_point
+    end
+
+    push!(curr_context_set.future_contexts, new_final_context)
+
+    @assert length(curr_context_set.future_contexts) == params.horizon_limit
+
+end
+
 
 
 function HHPC.simulate_cmssp!(cmssp::GridsContinuumCMSSPType, state::GridsContinuumStateType, a::Union{Nothing, GridsContinuumActionType},
@@ -276,5 +374,3 @@ function HHPC.simulate_cmssp!(cmssp::GridsContinuumCMSSPType, state::GridsContin
         return (next_state, reward, false, timeout)
     end
 end
-
-# Still need to generate initial context set and update context set.

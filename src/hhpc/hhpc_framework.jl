@@ -133,6 +133,7 @@ end
 
     # HHPC requirements
     @req simulate_cmssp!(::P, ::S, ::Union{Nothing, A}, ::Int64, ::RNG where {RNG <: AbstractRNG})
+    @req update_context_set!(::P, ::RNG where {RNG <: AbstractRNG}) 
     @req get_bridging_action(::OpenLoopVertex{D, C, AD, M})
     @req display_context_future(::CS, ::Int64)
 
@@ -143,6 +144,7 @@ end
 
 
 
+# TODO - Update context before or after simulate step???
 """
 Executes the top-level behavior of HHPC. Utilizes both global and local layer logic, and interleaving.
 """
@@ -250,6 +252,7 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
 
         # Update current state and context
         solver.curr_state = new_state
+        update_context_set!(cmssp, solver.rng)
 
         @debug new_state
 

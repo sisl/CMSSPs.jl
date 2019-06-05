@@ -520,13 +520,17 @@ function HHPC.update_next_target!(cmssp::DREAMRCMSSPType, solver::DREAMRSolverTy
 end
 
 
+function HHPC.update_context_set!(cmssp::DREAMRCMSSPType, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+    cmssp.curr_context_set.curr_epoch += 1
+end
+
+
 function HHPC.simulate_cmssp!(cmssp::DREAMRCMSSPType{US,UA}, state::DREAMRStateType{US}, a::Union{Nothing,DREAMRActionType{UA}}, t::Int64,
                               rng::RNG=Random.GLOBAL_RNG) where {US <: UAVState, UA <: UAVAction, RNG <: AbstractRNG}
 
     # Update context
     timeout = false
-    cmssp.curr_context_set.curr_epoch += 1
-
+    
     context_set = cmssp.curr_context_set
     params = cmssp.params
 
