@@ -129,9 +129,9 @@ Convert horizon-augmented vector to ModalStateAugmented
 """
 function POMDPs.convert_s(::Type{ModalStateAugmented{C}}, v::AbstractVector{Float64},
                           mdp::ModalFinHorMDP) where {C}
-    state = convert_s(C, v, mdp)
-    horizon = convert(Int64,v[end])
-    s = ModalStateAugmented{C}(state,horizon)
+    state = convert_s(C, v[1:end-1], mdp)
+    horizon = convert(Int64, v[end])
+    s = ModalStateAugmented{C}(state, horizon)
     return s
 end
 

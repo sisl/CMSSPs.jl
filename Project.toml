@@ -4,6 +4,7 @@ uuid = "eb9e90fe-355c-11e9-2c04-91cd8710bc84"
 version = "0.1.0"
 
 [deps]
+ContinuumWorld = "5cbb95a3-277b-5373-895a-7e14bd91b3cc"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"

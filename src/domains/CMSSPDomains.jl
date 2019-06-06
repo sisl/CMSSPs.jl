@@ -21,31 +21,25 @@ using Graphs
 # For reading params
 using TOML
 
+# For continuum world
+using ContinuumWorld
+
 # CMSSPs submodule
 using CMSSPs.CMSSPModel
 using CMSSPs.HHPC
 
 
-# Toy2D exports
-# export
-#     Toy2DContState,
-#     Toy2DContAction,
-#     Toy2DParameters,
-#     Toy2DStateType,
-#     Toy2DActionType,
-#     Toy2DCMSSPType,
-#     Toy2DModalMDPType,
-#     Toy2DContextType,
-#     Toy2DContextSet,
-#     Toy2DSolverType,
-#     Toy2DOpenLoopVertex,
-#     TOY2D_MODES,
-#     TOY2D_GOAL_MODE,
-#     create_toy2d_cmssp,
-#     sample_toy2d,
-#     toy2d_parse_params,
-#     generate_start_state,
-#     generate_start_context_set
+# Continuum exports
+export
+    GridsContinuumParams,
+    GridsContinuumCMSSPType,
+    GridsContinuumMDPType,
+    GridsContinuumSolverType,
+    GridsContinuumContextSet,
+    continuum_parse_params,
+    create_continuum_cmssp,
+    set_start_context_set!,
+    generate_start_state
 
 
 # DREAMR exports
@@ -92,7 +86,7 @@ export
 
 
 # include("toy_2d.jl")
-include("grids_continuum.jl")
+include("grids_continuum/grids_continuum.jl")
 
 include("dreamr/dreamr_types.jl")
 include("dreamr/dreamr_params.jl")

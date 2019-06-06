@@ -4,9 +4,25 @@ struct GridsContinuumParams
     num_bridge_samples::Int64
     horizon_limit::Int64
     vals_along_axis::Int64 # Number of points along axis for interpolation
+    move_coefficient::Float64
+    time_coefficient::Float64
     cworlds::Dict{Int64,CWorld} # The exemplar continuum worlds
 end
 
+
+function continuum_parse_params(filename::AbstractString, cworlds::Dict{Int64, CWorld})
+
+    params_key = TOML.parsefile(filename)
+
+    return GridsContinuumParams(params_key["EPSILON"],
+                                params_key["NUM_GEN_SAMPLES"],
+                                params_key["NUM_BRIDGE_SAMPLES"],
+                                params_key["HORIZON_LIMIT"],
+                                params_key["AXIS_VALS"],
+                                params_key["MOVE_COEFFICIENT"],
+                                params_key["TIME_COEFFICIENT"],
+                                cworlds)
+end
 
 const GridsContinuumStateType = CMSSPState{Int64, Vec2}
 const GridsContinuumActionType = CMSSPAction{Int64, Vec2}
@@ -18,6 +34,8 @@ mutable struct GridsContinuumContextSet
     curr_context::GridsContinuumContextType
     future_contexts::Vector{GridsContinuumContextType}
 end
+
+GridsContinuumContextSet() = GridsContinuumContextSet(0, GridsContinuumContextType(), Vector{GridsContinuumContextType}(undef, 0))
 
 Base.zero(Nothing) = nothing
 
@@ -111,10 +129,20 @@ end
 function POMDPs.reward(mdp::GridsContinuumMDPType, state::Vec2, action::Vec2, statep::Vec2)
 
     # Copy over reward of underlying Continuum World
-    cworld = mdp.params.cworlds[mdp.mode]
-    return POMDPs.reward(cworld, state, action, statep)
+    delta_state = norm(statep - state)
+    rew = -1.0*(mdp.params.move_coefficient*delta_state + mdp.params.time_coefficient)
+    return rew
 
 end
+
+
+function POMDPs.generate_s(mdp::GridsContinuumMDPType, state::Vec2, action::Vec2, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+
+    params = mdp.params
+    cworld = params.cworlds[mdp.mode]
+    return generate_s(cworld, state, action, rng)
+end
+
 
 function HHPC.expected_reward(mdp::GridsContinuumMDPType, state::Vec2,
                               action::Vec2, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
@@ -125,7 +153,7 @@ function HHPC.expected_reward(mdp::GridsContinuumMDPType, state::Vec2,
 
     for i = 1:params.num_generative_samples
         statep = generate_s(cworld, state, action, rng)
-        avg_reward += POMDPs.reward(cworld, state, action, statep)
+        avg_reward += POMDPs.reward(mdp, state, action, statep)
     end
 
     avg_reward /= params.num_generative_samples
