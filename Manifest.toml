@@ -204,6 +204,14 @@ git-tree-sha1 = "b625d802587c2150c279a40a646fba63f9bd8187"
 uuid = "8f4d0f93-b110-5947-807f-2305c1781a2d"
 version = "1.2.0"
 
+[[ContinuumWorld]]
+deps = ["GridInterpolations", "LinearAlgebra", "POMDPModelTools", "POMDPModels", "POMDPs", "Parameters", "Plots", "Random", "StaticArrays"]
+git-tree-sha1 = "c96de2968eb3046913bfdafd71da4f1574d2b774"
+repo-rev = "master"
+repo-url = "https://github.com/JuliaPOMDP/ContinuumWorld.jl.git"
+uuid = "5cbb95a3-277b-5373-895a-7e14bd91b3cc"
+version = "0.2.1"
+
 [[Contour]]
 deps = ["LinearAlgebra", "StaticArrays", "Test"]
 git-tree-sha1 = "b974e164358fea753ef853ce7bad97afec15bb80"
@@ -621,19 +629,15 @@ version = "0.5.2+"
 
 [[LocalApproximationValueIteration]]
 deps = ["LocalFunctionApproximation", "POMDPModelTools", "POMDPs", "Printf", "Random"]
-git-tree-sha1 = "7929a9c6a76d8cd503597a5867b74bef7fa9b519"
-repo-rev = "master"
-repo-url = "https://github.com/JuliaPOMDP/LocalApproximationValueIteration.jl"
+git-tree-sha1 = "e8a150140f2c5e52cf343a89b9392e35fe227633"
 uuid = "a40420fb-f401-52da-a663-f502e5b95060"
-version = "0.2.1"
+version = "0.3.0"
 
 [[LocalFunctionApproximation]]
-deps = ["Distances", "GridInterpolations", "NearestNeighbors", "Test"]
-git-tree-sha1 = "7413c89ac7815959a07748f092ef86a8168cac22"
-repo-rev = "f-h-extension"
-repo-url = "https://github.com/sisl/LocalFunctionApproximation.jl"
+deps = ["Distances", "GridInterpolations", "NearestNeighbors"]
+git-tree-sha1 = "0a6fc6de62ca396ed528a816ad26cdba640221e5"
 uuid = "db97f5ab-fc25-52dd-a8f9-02a257c35074"
-version = "1.0.0+"
+version = "1.1.0"
 
 [[Loess]]
 deps = ["Distances", "Random", "Statistics", "Test"]
