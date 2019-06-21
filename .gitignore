@@ -4,3 +4,4 @@
 deps/deps.jl
 *.jld2
 scripts/dreamr/results/
+*.DS_Store
