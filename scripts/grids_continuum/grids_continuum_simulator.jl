@@ -2,6 +2,7 @@ using GridInterpolations
 using LocalFunctionApproximation
 using StaticArrays
 using JLD2, FileIO
+using POMDPs
 using Random
 using ContinuumWorld
 using CMSSPs
@@ -26,7 +27,7 @@ for m in CONTINUUM_MODES
     modal_mdps[m] = modal_horizon_policy.in_horizon_policy.mdp
 end
 
-# Define the params struct and the dmssp problem objectß
+# Define the params struct and the dmssp problem object
 params = modal_horizon_policy.in_horizon_policy.mdp.params
 cmssp = create_continuum_cmssp(params, rng)
 
@@ -48,8 +49,9 @@ for trial = 1:TRIALS
                                                 deltaT,
                                                 goal_modes,
                                                 start_state,
-                                                zero(ContinuumDummyBookkeeping),
+                                                ContinuumDummyBookkeeping(),
                                                 rng)
 
+    @info "Now solving"
     solve(continuum_solver, cmssp)
 end    

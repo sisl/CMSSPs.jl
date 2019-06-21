@@ -149,6 +149,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # Now add for next modes
     next_valid_modes = generate_next_valid_modes(vis.cmssp, popped_mode)
 
+    # @show next_valid_modes
 
     for (action, nvm) in next_valid_modes
             
@@ -163,6 +164,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
         end
 
         num_new_vertices = length(vertices_to_add)
+        # @show num_new_vertices
 
         if num_new_vertices > 0
 

@@ -31,6 +31,8 @@ using CMSSPs.HHPC
 
 # Continuum exports
 export
+    ContinuumDummyBookkeeping,
+    ContinuumDummyMetadata,
     GridsContinuumParams,
     GridsContinuumCMSSPType,
     GridsContinuumMDPType,
@@ -39,7 +41,13 @@ export
     continuum_parse_params,
     create_continuum_cmssp,
     set_start_context_set!,
-    generate_start_state
+    generate_start_state,
+    sample_continuum_state,
+    CONTINUUM_MODES,
+    CONTINUUM_GOAL_MODE
+
+
+include("grids_continuum/grids_continuum.jl")
 
 
 # DREAMR exports
@@ -84,9 +92,6 @@ export
     estimate_value_dreamr,
     init_q_dreamr
 
-
-# include("toy_2d.jl")
-include("grids_continuum/grids_continuum.jl")
 
 include("dreamr/dreamr_types.jl")
 include("dreamr/dreamr_params.jl")

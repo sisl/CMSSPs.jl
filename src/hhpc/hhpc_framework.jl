@@ -121,24 +121,21 @@ end
     @req update_vertices_with_context!(::P, ::typeof(solver.graph_tracker), ::Int64)
     @req generate_goal_vertex_set!(::P, ::OpenLoopVertex{D, C, AD, M}, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
     @req generate_next_valid_modes(::P, ::D)
-    @req generate_bridge_vertex_set!(::P, ::OpenLoopVertex{D,C,AD,M}, ::Tuple{D,D}, ::typeof(solver.graph_tracker), ::RNG where {RNG <: AbstractRNG})
+    @req generate_bridge_vertex_set!(::P, ::OpenLoopVertex{D,C,AD,M}, ::Tuple{D,D}, ::typeof(solver.graph_tracker), ::AD, ::RNG where {RNG <: AbstractRNG})
     @req update_next_target!(::P, ::typeof(solver), ::Int64)
-    @req zero(::M)    
+    @req zero(::Type{M})    
 
     # Local layer requirements
     @req get_relative_state(::MDPType, ::C, ::C)
     @req expected_reward(::MDPType, ::C, ::AC)
-    @req convert_s(::Type{V} where V <: AbstractVector{Float64},::C, ::MDPType)
-    @req convert_s(::Type{C},::V where V <: AbstractVector{Float64}, ::MDPType)
+    @req convert_s(::Type{Vector{Float64}}, ::C, ::ModalFinHorMDP{D,C,AC,PR})
+    @req convert_s(::Type{C}, ::AbstractVector{Float64}, ::ModalFinHorMDP{D,C,AC,PR})
 
     # HHPC requirements
     @req simulate_cmssp!(::P, ::S, ::Union{Nothing, A}, ::Int64, ::RNG where {RNG <: AbstractRNG})
     @req update_context_set!(::P, ::RNG where {RNG <: AbstractRNG}) 
     @req get_bridging_action(::OpenLoopVertex{D, C, AD, M})
     @req display_context_future(::CS, ::Int64)
-
-    # MCTS requirement
-    
 
 end
 
@@ -171,12 +168,12 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
 
     while t <= solver.max_steps
 
-        @debug solver.curr_state, t, plan
+        @debug "Curr state - ",solver.curr_state
+        @debug "Curr time - ", t
 
         if plan == true
             open_loop_plan!(cmssp, solver.curr_state, t, edge_weight, solver.heuristic,
                                   solver.goal_modes, solver.graph_tracker, start_metadata)
-            # readline()
             last_plan_time = t
             plan = false
             next_target = solver.graph_tracker.curr_graph.vertices[solver.graph_tracker.curr_soln_path_idxs[2]]
@@ -195,13 +192,13 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
         # now do work for macro-actions 
          # Second vertex in full plan
         # start_metadata = next_target.metadata
-        @debug next_target
+        @debug "Next Target - ", next_target
 
         # Check if 'terminal' state as per modal MDP
         @assert solver.curr_state.mode == next_target.pre_bridge_state.mode
 
         relative_time = mean(next_target.tp) - t
-        @debug relative_time
+        @debug "Time to next switch - ".relative_time
 
         if relative_time < 2
 
@@ -223,8 +220,8 @@ function POMDPs.solve(solver::HHPCSolver, cmssp::CMSSP{D,C,AD,AC,P,CS}) where {D
             end
         end
 
-        @debug curr_action
-        # readline()
+        @debug "Current Action - ", curr_action
+
 
         if curr_action != nothing
             temp_full_action = CMSSPAction{AD,AC}(curr_action, 1)

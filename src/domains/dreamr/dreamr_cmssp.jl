@@ -24,7 +24,7 @@ struct DREAMRVertexMetadata
     vertex_id::String
 end
 
-Base.zero(DREAMRVertexMetadata) = DREAMRVertexMetadata("", "")
+Base.zero(::Type{DREAMRVertexMetadata}) = DREAMRVertexMetadata("", "")
 
 struct DREAMRBookkeeping
     active_car_to_idx_ranges::Dict{String, Vector{Vector{Int64}}} # Maps car name to range of vertices that represent hopon
@@ -154,13 +154,23 @@ end
 
 
 ## Conversion for multirotor - can add others as needed
-function POMDPs.convert_s(::Type{V} where V <: AbstractVector{Float64}, s::MultiRotorUAVState,
-                          mdp::Union{DREAMRCFMDPType{MultiRotorUAVState, MultiRotorUAVAction},DREAMRUFMDPType{MultiRotorUAVState,MultiRotorUAVAction}})
+function POMDPs.convert_s(::Type{Vector{Float64}}, s::MultiRotorUAVState,
+                          mdp::DREAMRCFMDPType{MultiRotorUAVState, MultiRotorUAVAction})
     v = [s.x, s.y, s.xdot, s.ydot]
 end
 
 function POMDPs.convert_s(::Type{MultiRotorUAVState}, v::AbstractVector{Float64},
-                          mdp::Union{DREAMRCFMDPType{MultiRotorUAVState, MultiRotorUAVAction},DREAMRUFMDPType{MultiRotorUAVState,MultiRotorUAVAction}})
+                          mdp::DREAMRCFMDPType{MultiRotorUAVState, MultiRotorUAVAction})
+    s = MultiRotorUAVState(v[1], v[2], v[3], v[4])
+end
+
+function POMDPs.convert_s(::Type{Vector{Float64}}, s::MultiRotorUAVState,
+                          mdp::DREAMRUFMDPType{MultiRotorUAVState,MultiRotorUAVAction})
+    v = [s.x, s.y, s.xdot, s.ydot]
+end
+
+function POMDPs.convert_s(::Type{MultiRotorUAVState}, v::AbstractVector{Float64},
+                          mdp::DREAMRUFMDPType{MultiRotorUAVState,MultiRotorUAVAction})
     s = MultiRotorUAVState(v[1], v[2], v[3], v[4])
 end
 

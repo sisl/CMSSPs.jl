@@ -16,7 +16,13 @@ This will install the necessary dependencies and essentially reproduce the Julia
 ```shell
 julia> using CMSSPs
 ```
-The full package should then pre-compile.
+The full package should then pre-compile. AFTER this step, you can start [IJulia](https://github.com/JuliaLang/IJulia.jl)(install it if you have not already) and navigate to the `notebooks/`' folder:
+```shell
+julia> using IJulia
+julia> notebook(dir="./notebooks/")
+```
+You can then run the notebook to get an idea of how to use the code for a specific domain. An overview of the code package itself is given below.
+
 
 ## Overview
 

@@ -1,7 +1,10 @@
-EPSILON = 0.01
-NUM_GEN_SAMPLES =  20
-NUM_BRIDGE_SAMPLES = 40
-HORIZON_LIMIT = 20
-AXIS_VALS = 41
-MOVE_COEFFICIENT = 1.0
-TIME_COEFFICIENT = 0.05
+EPSILON = 0.064 # Distance threshold for being near a point; related to MOVE_STEP
+NUM_GEN_SAMPLES =  20 # Number of samples for monte carlo estimation of transitions
+NUM_BRIDGE_SAMPLES = 60 # Number of sampled points for making a mode switch (over context set)
+HORIZON_LIMIT = 60 # K parameter from paper - horizon limit for context
+AXIS_VALS = 41 # Number of discretization points along continuous axis of -1 to 1
+MOVE_COEFFICIENT = 1.0 # Cost term
+TIME_COEFFICIENT = 0.05 # Cost term
+BETA = 0.8 # Risk threshold parameter for local pre-emption
+MOVE_AMT = 0.04 # Movement with single action
+MOVE_STD = 0.002 # Standard dev. for movement in direction

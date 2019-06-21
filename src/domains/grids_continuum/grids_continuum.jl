@@ -1,4 +1,4 @@
-struct GridsContinuumParams
+mutable struct GridsContinuumParams
     epsilon::Float64
     num_generative_samples::Int64
     num_bridge_samples::Int64
@@ -6,11 +6,13 @@ struct GridsContinuumParams
     vals_along_axis::Int64 # Number of points along axis for interpolation
     move_coefficient::Float64
     time_coefficient::Float64
+    beta::Float64
+    move_amt::Float64
+    move_std::Float64
     cworlds::Dict{Int64,CWorld} # The exemplar continuum worlds
 end
 
-
-function continuum_parse_params(filename::AbstractString, cworlds::Dict{Int64, CWorld})
+function continuum_parse_params(filename::AbstractString)
 
     params_key = TOML.parsefile(filename)
 
@@ -21,7 +23,11 @@ function continuum_parse_params(filename::AbstractString, cworlds::Dict{Int64, C
                                 params_key["AXIS_VALS"],
                                 params_key["MOVE_COEFFICIENT"],
                                 params_key["TIME_COEFFICIENT"],
-                                cworlds)
+                                params_key["BETA"],
+                                params_key["MOVE_AMT"],
+                                params_key["MOVE_STD"],
+                                Dict{Int64, CWorld}())
+
 end
 
 const GridsContinuumStateType = CMSSPState{Int64, Vec2}
@@ -35,17 +41,27 @@ mutable struct GridsContinuumContextSet
     future_contexts::Vector{GridsContinuumContextType}
 end
 
+struct ContinuumDummyBookkeeping
+    flag::Bool
+end
+ContinuumDummyBookkeeping() = ContinuumDummyBookkeeping(false)
+
+struct ContinuumDummyMetadata
+    flag::Bool
+end
+Base.zero(::Type{ContinuumDummyMetadata}) = ContinuumDummyMetadata(false)
+
 GridsContinuumContextSet() = GridsContinuumContextSet(0, GridsContinuumContextType(), Vector{GridsContinuumContextType}(undef, 0))
 
-Base.zero(Nothing) = nothing
 
 
-const GridsContinuumCMSSPType = CMSSP{Int64, Vec2, Int64, Vec2, GridsContinuumParams}
+const GridsContinuumCMSSPType = CMSSP{Int64, Vec2, Int64, Vec2, GridsContinuumParams, GridsContinuumContextSet}
 const GridsContinuumMDPType = ModalFinHorMDP{Int64, Vec2, Vec2, GridsContinuumParams}
-const GridsContinuumBridgeSample = BridgeSample{Vec2, Nothing}
-const GridsContinuumOLV = OpenLoopVertex{Int64, Vec2, Int64, Nothing}
-const GridsContinuumGraphTracker = GraphTracker{Int64, Vec2, Int64, Nothing, Nothing, RNG} where {RNG <: AbstractRNG}
-const GridsContinuumSolverType = HHPCSolver{Int64, Vec2, Int64, Nothing, Nothing, RNG} where {RNG <: AbstractRNG}
+const GridsContinuumInfhorMDPType = ModalInfHorMDP{Int64, Vec2, Vec2, GridsContinuumParams}
+const GridsContinuumBridgeSample = BridgeSample{Vec2, ContinuumDummyMetadata}
+const GridsContinuumOLV = OpenLoopVertex{Int64, Vec2, Int64, ContinuumDummyMetadata}
+const GridsContinuumGraphTracker = GraphTracker{Int64, Vec2, Int64, ContinuumDummyMetadata, ContinuumDummyBookkeeping, RNG} where {RNG <: AbstractRNG}
+const GridsContinuumSolverType = HHPCSolver{Int64, Vec2, Int64, ContinuumDummyMetadata, ContinuumDummyBookkeeping, RNG} where {RNG <: AbstractRNG}
 
 # Const mode values
 const CONTINUUM_MODES = [1, 2, 3, 4]
@@ -65,11 +81,8 @@ function get_grids_continuum_mdp()
     T[2, 1, 4] = 1.0
     T[3, 1, 4] = 1.0
 
+    # No cost for mode switches
     R = zeros(4, 2)
-    R[1, 1] = 15
-    R[1, 2] = 5
-    R[2, 1] = 5
-    R[3, 1] = 5
 
     return TabularMDP(T, R, 1.0)
 end
@@ -96,29 +109,31 @@ function get_grids_continuum_actions(params::GridsContinuumParams)
 end
 
 
-function create_continuum_cmssp(params::GridsContinuumParams)
+function create_continuum_cmssp(params::GridsContinuumParams, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
     actions = get_grids_continuum_actions(params)
     switch_mdp = get_grids_continuum_mdp()
+    temp_goal_state = GridsContinuumStateType(CONTINUUM_GOAL_MODE, sample_continuum_state(rng))
 
-    return GridsContinuumCMSSPType(actions, CONTINUUM_MODES, switch_mdp, params)
-
+    return GridsContinuumCMSSPType(actions, CONTINUUM_MODES, switch_mdp, temp_goal_state, params, GridsContinuumContextSet())
+""
 end
 
 function POMDPs.isterminal(mdp::GridsContinuumMDPType, relative_state::Vec2)
     return norm(relative_state) < mdp.params.epsilon
 end
 
-function POMDPs.isterminal(cmssp::GridsContinuumCMSSPType, state::Vec2)
-    return state.mode = CONTINUUM_GOAL_MODE
+function POMDPs.isterminal(cmssp::GridsContinuumCMSSPType, state::GridsContinuumStateType)
+    return state.mode == CONTINUUM_GOAL_MODE
 end
 
-function HHPC.get_relative_state(mdp::GridsContinuumMDPType, source::GridsContinuumStateType, target::GridsContinuumStateType)
+function HHPC.get_relative_state(mdp::Union{GridsContinuumMDPType, GridsContinuumInfhorMDPType},
+                                 source::Vec2, target::Vec2)
     return (source - target)
 end
 
 function sample_continuum_state(rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
-    d = Uniform(0.0, 1.0)
+    d = Distributions.Uniform(0.0, 1.0)
     return Vec2(rand(rng, d), rand(rng, d))
 end
 
@@ -135,6 +150,10 @@ function POMDPs.reward(mdp::GridsContinuumMDPType, state::Vec2, action::Vec2, st
 
 end
 
+function POMDPs.convert_s(::Type{Vector{Float64}}, s::Vec2,
+                          mdp::GridsContinuumMDPType) where V <: AbstractVector{Float64}
+    return [s[1], s[2]]
+end
 
 function POMDPs.generate_s(mdp::GridsContinuumMDPType, state::Vec2, action::Vec2, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
@@ -144,7 +163,15 @@ function POMDPs.generate_s(mdp::GridsContinuumMDPType, state::Vec2, action::Vec2
 end
 
 
-function HHPC.expected_reward(mdp::GridsContinuumMDPType, state::Vec2,
+function POMDPs.generate_sr(mdp::Union{GridsContinuumMDPType, GridsContinuumInfhorMDPType},
+                            state::Vec2, action::Vec2, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
+
+    statep = generate_s(mdp, state, action, rng)
+    rew = reward(mdp, state, action, statep)
+    return (statep, rew)
+end
+
+function HHPC.expected_reward(mdp::Union{GridsContinuumMDPType, GridsContinuumInfhorMDPType}, state::Vec2,
                               action::Vec2, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
     
     params = mdp.params
@@ -185,6 +212,9 @@ function HHPC.generate_bridge_vertex_set!(cmssp::GridsContinuumCMSSPType, vertex
     @assert !isempty(future_contexts)
     avg_samples = convert(Int64, ceil(cmssp.params.num_bridge_samples/length(future_contexts)))
 
+    # @show avg_samples
+    # @show length(future_contexts)
+
     for (hor, context) in enumerate(future_contexts)
 
         # Iterate over (M1,M2) -> point
@@ -193,8 +223,8 @@ function HHPC.generate_bridge_vertex_set!(cmssp::GridsContinuumCMSSPType, vertex
             # Generate bridge point
             if mpair == mode_pair
 
-                d1 = Uniform(switch_point[1] - params.epsilon/2.0, switch_point[1] + params.epsilon/2.0)
-                d2 = Uniform(switch_point[2] - params.epsilon/2.0, switch_point[2] + params.epsilon/2.0)
+                d1 = Distributions.Uniform(switch_point[1] - params.epsilon/2.0, switch_point[1] + params.epsilon/2.0)
+                d2 = Distributions.Uniform(switch_point[2] - params.epsilon/2.0, switch_point[2] + params.epsilon/2.0)
 
                 for i = 1:avg_samples
                     
@@ -203,7 +233,7 @@ function HHPC.generate_bridge_vertex_set!(cmssp::GridsContinuumCMSSPType, vertex
                     cont_state = Vec2(bp1, bp2)
 
                     bridge_sample = GridsContinuumBridgeSample(cont_state, cont_state,
-                                        TPDistribution([curr_timestep + hor], [1.0]), nothing)
+                                        TPDistribution([curr_timestep + hor], [1.0]), zero(ContinuumDummyMetadata))
                     new_bridge_vtx = GridsContinuumOLV(mode_pair[1], mode_pair[2], bridge_sample, action)
 
                     push!(vertices_to_add, new_bridge_vtx)
@@ -222,7 +252,7 @@ function HHPC.generate_next_valid_modes(cmssp::GridsContinuumCMSSPType, mode::In
     context_set = cmssp.curr_context_set
     future_contexts = context_set.future_contexts
 
-    next_actions_modes = Vector{Tuple{Int64, Int64}}(undef, 0)
+    next_actions_modes = Set{Tuple{Int64, Int64}}()
 
     for (hor, context) in enumerate(future_contexts) # Vector of dictionaries
 
@@ -234,14 +264,14 @@ function HHPC.generate_next_valid_modes(cmssp::GridsContinuumCMSSPType, mode::In
 
                 for action = 1:2
                     if cmssp.modeswitch_mdp.T[mode, action, next_mode] > 0.0
-                        push!(next_modes_actions, (action, next_mode))
+                        push!(next_actions_modes, (action, next_mode))
                     end
                 end
             end
         end
     end
 
-    return next_modes_actions
+    return next_actions_modes
 end
 
 # Dummy function as vertices will always be regenerated
@@ -286,7 +316,7 @@ function set_start_context_set!(cmssp::GridsContinuumCMSSPType,  rng::RNG=Random
         # Iterate over current switch points and sample around them
         for (mpair, switch_point) in temp_context
 
-            theta = rand(rng, Uniform(0.0, 2.0*pi))
+            theta = rand(rng, Distributions.Uniform(0.0, 2.0*pi))
             new_pt1 = clamp(switch_point[1] + r*cos(theta), 0.0, 1.0)
             new_pt2 = clamp(switch_point[2] + r*sin(theta), 0.0, 1.0)
             new_point = Vec2(new_pt1, new_pt2)
@@ -303,13 +333,23 @@ function set_start_context_set!(cmssp::GridsContinuumCMSSPType,  rng::RNG=Random
 end
 
 
+function HHPC.get_bridging_action(vertex::GridsContinuumOLV)
+    return vertex.bridging_action
+end
+
+function HHPC.display_context_future(context_set::GridsContinuumContextSet, future_timestep::Int64)
+    @assert future_timestep > context_set.curr_timestep
+    println(context_set.future_contexts[future_timestep - context_set.curr_timestep])
+end
+
 
 function HHPC.update_context_set!(cmssp::GridsContinuumCMSSPType, rng::RNG=Random.GLOBAL_RNG) where {RNG <: AbstractRNG}
 
     curr_context_set = cmssp.curr_context_set
+    params = cmssp.params
 
     # Update timestep
-    curr_context_set.timestep += 1
+    curr_context_set.curr_timestep += 1
 
     # First update the current context based on the first future context
     curr_context = curr_context_set.curr_context
@@ -321,7 +361,7 @@ function HHPC.update_context_set!(cmssp::GridsContinuumCMSSPType, rng::RNG=Rando
         next_switch_point = next_context[mpair]
 
         # Choose an interpolated point between curr and next chosen switch point
-        interp_frac = rand(rng, Uniform(0.5, 1.0))
+        interp_frac = rand(rng, Distributions.Uniform(0.5, 1.0))
         new_switch_point = curr_switch_point + interp_frac*(next_switch_point - curr_switch_point)
         new_curr_context[mpair] = new_switch_point
     end
@@ -336,9 +376,11 @@ function HHPC.update_context_set!(cmssp::GridsContinuumCMSSPType, rng::RNG=Rando
     pre_final_context = curr_context_set.future_contexts[end]
     new_final_context = GridsContinuumContextType()
 
+    r = params.epsilon/2.0
+
     for (mpair, switch_point) in pre_final_context
 
-        theta = rand(rng, Uniform(0.0, 2.0*pi))
+        theta = rand(rng, Distributions.Uniform(0.0, 2.0*pi))
         new_pt1 = clamp(switch_point[1] + r*cos(theta), 0.0, 1.0)
         new_pt2 = clamp(switch_point[2] + r*sin(theta), 0.0, 1.0)
         new_point = Vec2(new_pt1, new_pt2)
@@ -359,6 +401,7 @@ function HHPC.simulate_cmssp!(cmssp::GridsContinuumCMSSPType, state::GridsContin
 
     # Default - will delete when timeout removed
     timeout = false
+
 
     curr_context_set = cmssp.curr_context_set
     curr_context = curr_context_set.curr_context
@@ -396,8 +439,8 @@ function HHPC.simulate_cmssp!(cmssp::GridsContinuumCMSSPType, state::GridsContin
     else
         # control action within mode
         cworld = params.cworlds[curr_mode]
-        new_cont_state = generate_s(cworld, state, a.action, rng)
-        reward = POMDPs.reward(cworld, state, a.action, new_cont_state)
+        new_cont_state = generate_s(cworld, state.continuous, a.action, rng)
+        reward = POMDPs.reward(cworld, state.continuous, a.action, new_cont_state)
         next_state = GridsContinuumStateType(curr_mode, new_cont_state)
         return (next_state, reward, false, timeout)
     end

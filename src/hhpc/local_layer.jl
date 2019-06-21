@@ -10,9 +10,9 @@ end
 get_mdp(mhp::ModalHorizonPolicy) = mhp.in_horizon_policy.mdp
 
 
-struct ModalFinInfHorPolicy{P <: Policy, Q <: Policy}
+struct ModalFinInfHorPolicy{P <: Policy}
     fin_hor_policy::Union{ModalHorizonPolicy{P},P}
-    inf_hor_policy::Q
+    inf_hor_policy::Union{Nothing,P}
 end
 
 
@@ -117,8 +117,8 @@ get_mdp(pol::LocalApproximationValueIterationPolicy) = pol.mdp
 Convert augmented state to a vector by calling the underlying convert_s function
 for non-augmented state. IMPORTANT: The underlying dynamics should be for RELATIVE STATE
 """
-function POMDPs.convert_s(::Type{V}, s::ModalStateAugmented, 
-                          mdp::ModalFinHorMDP) where {V <: AbstractVector{Float64}}
+function POMDPs.convert_s(::Type{Vector{Float64}}, s::ModalStateAugmented, 
+                          mdp::ModalFinHorMDP)
     v = convert_s(Vector{Float64}, s.relative_state, mdp)
     push!(v, convert(Float64, s.horizon))
     return v
@@ -134,6 +134,7 @@ function POMDPs.convert_s(::Type{ModalStateAugmented{C}}, v::AbstractVector{Floa
     s = ModalStateAugmented{C}(state, horizon)
     return s
 end
+
 
 
 function POMDPs.generate_sr(mdp::ModalFinHorMDP, s::ModalStateAugmented, a::ModalAction, 
