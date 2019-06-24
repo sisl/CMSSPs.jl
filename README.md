@@ -1,6 +1,6 @@
 # CMSSPs
 
-Accompanying code repository for the paper 'Hybrid Planning for Dynamic Multimodal Stochastic Shortest Paths'.
+Accompanying code repository for the paper 'Hybrid Planning for Dynamic Multimodal Stochastic Shortest Paths'. [ArXiv](https://arxiv.org/abs/1906.09094)
 
 
 **N.B.** Due to legacy naming reasons, the attached code uses the acronyms `CMSSP` and `HHPC` instead of `DMSSP` and `HSP` respectively. Also, this code is primarily provided for illustrative purposes. There are several inter-related components, and pre-processing steps necessary to run the full planning framework.
