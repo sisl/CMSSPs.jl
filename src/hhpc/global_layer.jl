@@ -50,7 +50,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
                          heuristic::Function,
                          goal_modes::Vector{D},
                          graph_tracker::GraphTracker{D,C,AD,M,B,RNG},
-                         start_metadata::M) where {D,C,AD,M,B,RNG <: AbstractRNG} 
+                         start_metadata::M) where {D,C,AD,M,B,RNG <: AbstractRNG}
 
     # First update the context
     update_vertices_with_context!(cmssp, graph_tracker, curr_time)
@@ -65,7 +65,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
     empty!(graph_tracker.curr_soln_path_idxs)
 
     # Obtain path and current cost with A*
-    astar_path_soln = astar_light_shortest_path_implicit(graph_tracker.curr_graph, edge_weight,
+    a_star_path_soln = a_star_light_shortest_path_implicit!(graph_tracker.curr_graph, edge_weight,
                                                          graph_tracker.curr_start_idx,
                                                          GoalVisitorImplicit(graph_tracker, cmssp, goal_modes))
 
@@ -77,7 +77,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
 
     # Check that goal state is indeed terminal
     # And that A* has non-Inf cost path to it
-    @assert astar_path_soln.dists[graph_tracker.curr_goal_idx] < Inf "Path to goal is Inf cost!"
+    @assert a_star_path_soln.dists[graph_tracker.curr_goal_idx] < Inf "Path to goal is Inf cost!"
 
     ## Walk path back to goal
     # Insert goal in soln vector
@@ -85,7 +85,7 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
     curr_vertex_idx = graph_tracker.curr_goal_idx
 
     while curr_vertex_idx != graph_tracker.curr_start_idx
-        prev_vertex_idx = astar_path_soln.parent_indices[curr_vertex_idx]
+        prev_vertex_idx = a_star_path_soln.parent_indices[curr_vertex_idx]
         pushfirst!(graph_tracker.curr_soln_path_idxs, prev_vertex_idx)
         curr_vertex_idx = prev_vertex_idx
     end
@@ -111,7 +111,7 @@ struct GoalVisitorImplicit <: AbstractDijkstraVisitor
 end
 
 
-function Graphs.include_vertex!(vis::GoalVisitorImplicit, 
+function Graphs.include_vertex!(vis::GoalVisitorImplicit,
                                 u::OpenLoopVertex, v::OpenLoopVertex, d::Float64, nbrs::Vector{Int64})
 
     # @show v
@@ -126,10 +126,10 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
 
     # If goal mode but NOT goal state, add samples from goal
     if popped_mode in vis.goal_modes
-            
+
         # Generate goal sample set
         (vertices_to_add, nbrs_to_add) = generate_goal_vertex_set!(vis.cmssp, v, vis.graph_tracker, vis.graph_tracker.rng)
-        
+
         for nbr_idx in nbrs_to_add
             push!(nbrs, nbr_idx)
         end
@@ -137,7 +137,7 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
         num_new_vertices = length(vertices_to_add)
 
         if num_new_vertices > 0
-            
+
             # Add vertices to graph and to nbrs
             for vtx in vertices_to_add
                 add_vertex!(vis.graph_tracker.curr_graph, vtx)
@@ -152,9 +152,9 @@ function Graphs.include_vertex!(vis::GoalVisitorImplicit,
     # @show next_valid_modes
 
     for (action, nvm) in next_valid_modes
-            
+
         # Generate bridge samples
-        (vertices_to_add, nbrs_to_add) = generate_bridge_vertex_set!(vis.cmssp, v, 
+        (vertices_to_add, nbrs_to_add) = generate_bridge_vertex_set!(vis.cmssp, v,
                                                                     (popped_mode, nvm),
                                                                     vis.graph_tracker,
                                                                     action,
