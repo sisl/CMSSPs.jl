@@ -1,6 +1,6 @@
-authors = ["Shushman <shushmanchoudhury@gmail.com>"]
 name = "CMSSPs"
 uuid = "eb9e90fe-355c-11e9-2c04-91cd8710bc84"
+authors = ["Shushman <shushmanchoudhury@gmail.com>"]
 version = "0.1.0"
 
 [deps]
