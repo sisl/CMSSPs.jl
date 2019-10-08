@@ -65,9 +65,9 @@ function open_loop_plan!(cmssp::CMSSP, s_t::CMSSPState,
     empty!(graph_tracker.curr_soln_path_idxs)
 
     # Obtain path and current cost with A*
-    a_star_path_soln = a_star_light_shortest_path_implicit!(graph_tracker.curr_graph, edge_weight,
-                                                         graph_tracker.curr_start_idx,
-                                                         GoalVisitorImplicit(graph_tracker, cmssp, goal_modes))
+    a_star_path_soln = a_star_implicit_shortest_path!(graph_tracker.curr_graph, edge_weight,
+                                                      graph_tracker.curr_start_idx,
+                                                      GoalVisitorImplicit(graph_tracker, cmssp, goal_modes))
 
     # If unreachable, report warning
     if graph_tracker.curr_goal_idx == 0
